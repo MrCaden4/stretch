@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Stretch</title>
+  <meta name="description" content="Guided stretch-routine timer: Session A, Session B, Minimum, desk micro-doses and tests.">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0f1115">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Stretch">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Resolve the theme before first paint so the page does not flash.
+    (function () {
+      var theme = 'system';
+      try {
+        var raw = localStorage.getItem('stretch.v1');
+        if (raw) theme = (JSON.parse(raw).settings || {}).theme || 'system';
+      } catch (e) { /* ignore */ }
+      if (theme === 'system') {
+        theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+</head>
+<body>
+  <main id="app" class="app"></main>
+  <nav id="tabbar" class="tabbar" aria-label="Main"></nav>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <noscript><p class="noscript">Stretch needs JavaScript to run the timers.</p></noscript>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
