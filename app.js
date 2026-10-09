@@ -21,7 +21,7 @@ import { GUIDE, guideSection } from './data/guide.js';
 import { expandRoutine, SessionEngine, plannedSeconds, formatClock, sideName } from './timer.js';
 import * as S from './state.js';
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 const REPO_URL = 'https://github.com/MrCaden4/stretch';
 const ROUTE_FOR_ROUTINE = { A: 'a', B: 'b', min: 'min', off: 'off' };
 
@@ -347,28 +347,54 @@ function viewHome() {
   const deskPhase = S.deskPhaseForWeek(week);
   const desk = S.deskDay(state, key);
 
-  let todayCard;
+  // What already happened today, whatever the schedule said.
+  const mainDone = doneToday.filter((s) => s.routine === 'A' || s.routine === 'B');
   const minDone = doneToday.find((s) => s.routine === 'min');
-  const minLine = minDone ? `<p><strong>Minimum done today</strong> (${formatClock(minDone.durationSeconds)}). Counts as a completed day.</p>` : '';
+  const offDone = S.sessionsOn(state, key).find((s) => s.routine === 'off' && s.completed);
+  const doneLines = [
+    ...mainDone.map(
+      (s) =>
+        `<p><strong>Done today:</strong> ${esc(ROUTINES[s.routine].name)}, ${formatClock(s.durationSeconds)}${
+          s.longestSquatChunk ? `, longest squat chunk ${formatClock(s.longestSquatChunk)}` : ''
+        }.</p>`
+    ),
+    minDone ? `<p><strong>Minimum done today</strong> (${formatClock(minDone.durationSeconds)}). Counts as a completed day.</p>` : '',
+    offDone ? `<p><strong>Squat hang done today.</strong> Longest chunk ${formatClock(offDone.longestSquatChunk || 0)}.</p>` : '',
+  ].join('');
+
+  let todayCard;
   if (plan === 'off') {
-    const off = S.sessionsOn(state, key).find((s) => s.routine === 'off' && s.completed);
-    const extra = doneToday.filter((s) => s.routine === 'A' || s.routine === 'B');
-    const extraLine = extra.length ? `<p><strong>Done today:</strong> ${extra.map((s) => `${esc(ROUTINES[s.routine].name)} (${formatClock(s.durationSeconds)})`).join(', ')}.</p>` : '';
-    todayCard = `<section class="card"><h2>Today: Off day</h2><p>Off day: surf, skate, or a 3-minute squat hang.</p>${extraLine}${minLine}${
-      off ? `<p><strong>Squat hang done today.</strong> Longest chunk ${formatClock(off.longestSquatChunk || 0)}.</p>` : ''
-    }<a class="btn ${off ? '' : 'btn-primary btn-big'} btn-block" href="#/off">3-min squat hang</a><a class="btn btn-block" href="#/min" style="margin-top:10px">Bad day? Minimum, 10 min</a></section>`;
+    todayCard = `<section class="card"><h2>Today: Off day</h2><p>Off day: surf, skate, or a 3-minute squat hang.</p>${doneLines}<a class="btn ${
+      offDone ? '' : 'btn-primary btn-big'
+    } btn-block" href="#/off">3-min squat hang</a><a class="btn btn-block" href="#/min" style="margin-top:10px">Bad day? Minimum, 10 min</a></section>`;
   } else {
     const r = ROUTINES[plan];
-    const done = doneToday.find((s) => s.routine === plan);
-    const doneLine = done
-      ? `<p><strong>Done today:</strong> ${formatClock(done.durationSeconds)}${done.longestSquatChunk ? `, longest squat chunk ${formatClock(done.longestSquatChunk)}` : ''}.</p>`
-      : '';
-    todayCard = `<section class="card"><h2>Today: ${esc(r.name)}</h2><p class="muted">${esc(r.focus)}</p>${doneLine}${minLine}${
-      done
-        ? `<a class="btn btn-block" href="#/${ROUTE_FOR_ROUTINE[plan]}">Start ${esc(r.name)} again</a>`
+    const scheduledDone = mainDone.some((s) => s.routine === plan);
+    const anyDone = mainDone.length > 0 || !!minDone;
+    todayCard = `<section class="card"><h2>Today: ${esc(r.name)}</h2><p class="muted">${esc(r.focus)}</p>${doneLines}${
+      anyDone
+        ? `<a class="btn btn-block" href="#/${ROUTE_FOR_ROUTINE[plan]}">Start ${esc(r.name)}${scheduledDone ? ' again' : ''}</a>`
         : `<a class="btn btn-primary btn-big btn-block" href="#/${ROUTE_FOR_ROUTINE[plan]}">Start ${esc(r.name)} (about ${routineMinutes(plan)} min)</a>`
     }<a class="btn btn-block" href="#/min" style="margin-top:10px">Bad day? Minimum, 10 min</a></section>`;
   }
+
+  // Override the schedule: any session on any day.
+  const pickCard = `<section class="card pick-card">
+    <h2>Pick a session</h2>
+    <p class="muted small">Any session, any day. Session A or B counts toward the week whichever day you do it.</p>
+    <div class="grid-2">${['A', 'B']
+      .map(
+        (id) =>
+          `<a class="btn btn-big btn-stack" href="#/${ROUTE_FOR_ROUTINE[id]}"><span>${esc(ROUTINES[id].name)}${
+            plan === id ? ' <span class="badge">today</span>' : ''
+          }</span><small>${esc(ROUTINES[id].focus)} · about ${routineMinutes(id)} min</small></a>`
+      )
+      .join('')}</div>
+    <div class="grid-2" style="margin-top:10px">
+      <a class="btn btn-stack" href="#/min"><span>Minimum</span><small>Bad-day dose · 10-11 min</small></a>
+      <a class="btn btn-stack" href="#/off"><span>Squat hang</span><small>Off-day extra · 3 min</small></a>
+    </div>
+  </section>`;
 
   let testBanner = '';
   if (!hasBaseline) {
@@ -390,6 +416,7 @@ function viewHome() {
     ${activeBannerHtml()}
     ${testBanner}
     ${todayCard}
+    ${pickCard}
     <section class="card">
       <h2>This week</h2>
       ${dotsHtml(ws.days)}

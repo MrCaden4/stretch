@@ -158,7 +158,20 @@ function check(name, ok, extra = '') {
   check('home shows done today', home.includes('Done today'));
   check('week dot done', (await page.$$('.dot-done')).length === 1 && /Sessions completed\s*1\/4/.test(home), `(${(await page.$$('.dot-done')).length})`);
   check('program week shown', home.includes('Week 1'));
+  check('pick-a-session tile links to A and B and marks today', !!(await page.$('.pick-card a[href="#/a"]')) && !!(await page.$('.pick-card a[href="#/b"]')) && (await text('.pick-card')).includes('today'));
   await shot('19-home-after');
+  // Jump to Friday: the Today card goes off-day, the picker still offers A and B.
+  await page.clock.setSystemTime(new Date(2026, 9, 2, 19, 30, 0));
+  await page.goto(BASE + '#/settings');
+  await page.goto(BASE + '#/');
+  await page.waitForTimeout(50);
+  const offHome = await text('#app');
+  check('off day shows the off-day card', offHome.includes('Today: Off day'), `(${offHome.slice(0, 120)})`);
+  check('picker still offers Session A on an off day', !!(await page.$('.pick-card a[href="#/a"]')) && !(await text('.pick-card')).includes('today'));
+  await shot('19b-home-offday');
+  await page.clock.setSystemTime(new Date(2026, 8, 30, 19, 40, 0));
+  await page.goto(BASE + '#/settings');
+  await page.goto(BASE + '#/');
 
   // Second session: the setup screen shows the notch control again.
   await page.goto(BASE + '#/a');
