@@ -9,7 +9,7 @@ Vanilla HTML, CSS and JavaScript (ES modules). No frameworks, no build step, no 
 ## What it does
 
 - **Guided sessions** with big timers, spoken cues (Web Speech), beeps (Web Audio) and vibration. Timing is by wall clock, so a locked phone or a backgrounded tab never drifts the session. Screen Wake Lock keeps the display on.
-- **Phase types:** holds with a contract-relax cue timeline, accumulate (squat hangs, with chunk tracking), reps (90/90 lift-offs), transitions (side switch, next exercise with setup text, notch and suggestion).
+- **Phase types:** holds with a contract-relax cue timeline, accumulate (squat hangs, with chunk tracking), reps (90/90 lift-offs), transitions (side switch, next exercise with setup text and notch).
 - **Notches** (the depth setting per exercise) show on every transition screen with + and - buttons, so the progression rule is applied by hand in a tap.
 - **Home** shows today's session by weekday, the week tracker (4 dots), test-day banner, desk phase, schedule, rules and expectations.
 - **Desk** logs slant-board minutes, squat hangs and the hamstring hold, with bout timers.

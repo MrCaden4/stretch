@@ -36,7 +36,7 @@ Planned time (`plannedSeconds`) is the sum of every phase. Expected: A 1400 s, B
 ## Engine rules
 
 - Never count ticks. Every phase records its start wall time; `tick(now)` recomputes elapsed and fires cues whose time has passed. Cues more than 5 s late (`staleCueSeconds`) are emitted as `cueDropped`, not `cue`.
-- When a phase overruns (tab hidden), the next phase starts at the previous phase's exact end time, so the session stays on wall-clock time. Skip, back and rate start the next phase at `now`.
+- When a phase overruns (tab hidden), the next phase starts at the previous phase's exact end time, so the session stays on wall-clock time. Skip and back start the next phase at `now`.
 - Pause is per phase: `elapsedBefore` + `runningSince`. In accumulate phases a pause ends the current chunk.
 - Events: `start`, `phase`, `cue`, `cueDropped`, `phaseEnd`, `pause`, `resume`, `extend`, `finish`. Listeners receive `(type, data)`.
 - An exercise counts as completed once its last work phase ran out or was skipped (`completedIndexes`).

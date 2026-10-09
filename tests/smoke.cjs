@@ -82,6 +82,11 @@ function check(name, ok, extra = '') {
   let fit = await fits();
   check('setup/transition screen fits a 780 px viewport without scrolling', fit.fits, JSON.stringify(fit));
   await shot('10b-setup-780');
+  await page.setViewportSize({ width: 915, height: 340 });
+  fit = await fits();
+  check('setup/transition screen fits a 340 px tall landscape viewport', fit.fits, JSON.stringify(fit));
+  await shot('10c-setup-landscape');
+  await page.setViewportSize({ width: 412, height: 780 });
   await page.clock.runFor(30400);
   check('hold starts after 30 s', (await text('.phase-name')) === 'Settle', `(${await text('.phase-name')})`);
   fit = await fits();
@@ -115,11 +120,15 @@ function check(name, ok, extra = '') {
   // arrow right skips through the rest of A1: hold2 (remaining), switch, hold3, switch, hold4 -> transition
   for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
   check('exercise transition after A1', (await text('.phase-name')) === 'Next up' && (await text('.next-name')).includes('Squat Hang'), `(${await text('.phase-name')})`);
-  check('no feel screen anywhere', !(await page.$('.feel-btn')));
   check('transition shows squat notch', (await text('.notch-control')).includes('Heel lift'));
   fit = await fits();
   check('exercise transition fits a 780 px viewport without scrolling', fit.fits, JSON.stringify(fit));
   await shot('16-transition');
+  await page.setViewportSize({ width: 915, height: 340 });
+  fit = await fits();
+  check('exercise transition fits a 340 px tall landscape viewport', fit.fits, JSON.stringify(fit));
+  await shot('16b-transition-landscape');
+  await page.setViewportSize({ width: 412, height: 780 });
   await page.click('.ctl-skip'); // start now
   check('accumulate phase', (await page.getAttribute('.session', 'data-type')) === 'accumulate');
   await page.clock.runFor(50000);

@@ -427,20 +427,32 @@ body.in-session .toast { bottom: 16px; }
 /* ---- Landscape phone --------------------------------------------------- */
 
 @media (orientation: landscape) and (max-height: 560px) {
-  .session { padding: 6px 0; gap: 6px; }
+  .session { gap: 4px; padding: 4px 0 calc(8px + env(safe-area-inset-bottom)); }
+  .session-header { gap: 2px; }
   .session-body { display: grid; grid-template-columns: 1fr 1fr; align-items: center; text-align: left; gap: 4px 16px; }
   .session-body .exercise-name, .session-body .phase-name { grid-column: 1; }
   .session-body .timer-digits { grid-column: 2; grid-row: 1 / span 3; text-align: right; font-size: clamp(72px, 22vh, 160px); }
   .session-body .timer-sub, .session-body .phase-progress, .session-body .instruction { grid-column: 1 / span 2; }
-  .session-body .notch-control, .session-body .next-name { grid-column: 1 / span 2; }
-  .phase-name { font-size: clamp(24px, 6vh, 44px); }
-  .btn-huge { min-height: 56px; font-size: 1.15rem; }
-  .btn-big { min-height: 52px; }
-  .controls-secondary .btn { min-height: 44px; }
-  .controls-wrap { gap: 6px; }
-  .session { gap: 4px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
-  .session-header { gap: 2px; }
   .session-body .instruction { font-size: 1rem; margin: 0; }
+  .phase-name { font-size: clamp(24px, 6vh, 44px); }
+
+  /* Transition screens: countdown left, next exercise right, notch control on one line. */
+  .session[data-type="transition"] .session-body { grid-template-columns: 2fr 3fr; align-items: start; }
+  .session[data-type="transition"] .session-body .phase-name { grid-column: 1; grid-row: 1; }
+  .session[data-type="transition"] .session-body .timer-digits { grid-column: 1; grid-row: 2; text-align: left; font-size: clamp(40px, 18vh, 100px); }
+  .session[data-type="transition"] .session-body .phase-progress { grid-column: 1; grid-row: 3; }
+  .session[data-type="transition"] .session-body .next-name { grid-column: 2; grid-row: 1; font-size: 1.2rem; margin: 0; }
+  .session[data-type="transition"] .session-body .instruction { grid-column: 2; grid-row: 2 / span 2; font-size: 0.95rem; }
+  .session[data-type="transition"] .session-body .muted { display: none; }
+  .session[data-type="transition"] .notch-control { grid-column: 1 / span 2; grid-row: 4; display: grid; grid-template-columns: auto 48px 1fr 48px; align-items: center; gap: 10px; padding: 4px 10px; margin: 0; max-width: none; }
+  .session[data-type="transition"] .notch-row { display: contents; }
+  .session[data-type="transition"] .notch-label { white-space: nowrap; }
+
+  /* All session controls on one row. */
+  .controls-wrap { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+  .controls, .controls-secondary { display: contents; }
+  .controls .btn-huge { grid-column: auto; min-height: 56px; font-size: 1.15rem; }
+  .controls-secondary .btn { min-height: 50px; }
 }
 
 /* ---- Desktop -------------------------------------------------------------- */

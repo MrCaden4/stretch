@@ -193,14 +193,13 @@ function blockToPhase(block, ex, meta, fill) {
   throw new Error(`Unknown block type: ${block.type}`);
 }
 
-// Planned time = holds + reps + accumulate targets + transitions.
+// Planned time = every phase: holds + reps + accumulate targets + transitions.
 export function plannedSeconds(phases) {
   return phases.reduce((sum, p) => sum + p.seconds, 0);
 }
 
-export function totalSeconds(phases) {
-  return phases.reduce((sum, p) => sum + p.seconds, 0);
-}
+// The same number under the name the app and tests use for a whole session.
+export const totalSeconds = plannedSeconds;
 
 export function formatClock(seconds) {
   const s = Math.max(0, Math.ceil(seconds));
@@ -235,7 +234,6 @@ export class SessionEngine {
     this.endedEarly = false;
     this.accumulateResults = []; // { index, exerciseId, notch, accumulated, longestChunk, chunks }
     this.completedIndexes = new Set(); // phases finished by running out or by skip
-    this.maxIndexReached = -1;
     this.extra = new Map(); // phase index -> extra seconds added with +15
   }
 
@@ -280,7 +278,6 @@ export class SessionEngine {
       return;
     }
     this.index = i;
-    if (i > this.maxIndexReached) this.maxIndexReached = i;
     const paused = this.status === 'paused';
     this.cur = {
       startWall: atWall,
@@ -355,7 +352,8 @@ export class SessionEngine {
     const phase = this.phases[i];
     const el = Math.min(this._elapsedMs(atWall), this.durationMs(i));
     if (phase.type === 'accumulate') this._recordAccumulate(i, el);
-    if (reason === 'complete' || reason === 'skip') this.completedIndexes.add(i);
+    // Only tick ('complete') and skip() land here; back() and end() do not count a phase as done.
+    this.completedIndexes.add(i);
     this._emit('phaseEnd', { index: i, phase, reason, at: atWall });
   }
 

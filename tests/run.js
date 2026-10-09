@@ -45,14 +45,13 @@ function runToEnd(engine, clock, stepMs = 200) {
 }
 
 function recorder(engine, clock) {
-  const log = { cues: [], dropped: [], phases: [], ends: [], finish: null, ratings: [] };
+  const log = { cues: [], dropped: [], phases: [], ends: [], finish: null };
   engine.on((type, d) => {
     if (type === 'cue') log.cues.push({ index: d.index, at: d.cue.at, say: d.cue.say, wall: clock.now(), lag: d.lag });
     if (type === 'cueDropped') log.dropped.push({ index: d.index, at: d.cue.at, lag: d.lag });
     if (type === 'phase') log.phases.push({ index: d.index, at: d.at });
     if (type === 'phaseEnd') log.ends.push({ index: d.index, reason: d.reason });
     if (type === 'finish') log.finish = d;
-    if (type === 'rating') log.ratings.push(d);
   });
   return log;
 }
@@ -128,7 +127,6 @@ test('A has 4 exercise transitions of 20 s with a long beep, and no feel screens
   assert.deepEqual(ex.map((p) => p.next.id), ['A2', 'A3', 'A4', 'A5']);
   assert.equal(ph.filter((p) => p.type === 'feel').length, 0);
   assert.equal(ph.length, 24);
-  assert.equal(plannedSeconds(ph), totalSeconds(ph));
 });
 
 test('A2 squat hang accumulates 4:00 with a reminder every 60 s', () => {
