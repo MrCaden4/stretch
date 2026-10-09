@@ -28,6 +28,14 @@ function check(name, ok, extra = '') {
   page.on('requestfailed', (r) => errors.push('requestfailed: ' + r.url() + ' ' + (r.failure() && r.failure().errorText)));
   const shot = (name) => page.screenshot({ path: `${SHOTS}/${name}.png` });
   const text = async (sel) => ((await page.textContent(sel)) || '').replace(/\s+/g, ' ').trim();
+  // Does the session screen, controls included, fit the viewport without scrolling?
+  const fits = () =>
+    page.evaluate(() => {
+      const wrap = document.querySelector('.controls-wrap');
+      const r = wrap ? wrap.getBoundingClientRect() : { bottom: Infinity };
+      const doc = document.documentElement;
+      return { controlsBottom: Math.round(r.bottom), innerHeight: window.innerHeight, scrollHeight: doc.scrollHeight, fits: r.bottom <= window.innerHeight && doc.scrollHeight <= window.innerHeight + 1 };
+    });
 
   // ---- routes ----------------------------------------------------------------
   await page.goto(BASE + '#/', { waitUntil: 'load' });
@@ -54,8 +62,8 @@ function check(name, ok, extra = '') {
   const emdash = await page.evaluate(() => document.body.innerText.includes('\u2014'));
   check('no em dashes in rendered guide', !emdash);
 
-  // ---- Session A with a fake clock ---------------------------------------------
-  await page.clock.install();
+  // ---- Session A with a fake clock (pinned to a Wednesday evening) ------------
+  await page.clock.install({ time: new Date(2026, 8, 30, 19, 30, 0) });
   await page.goto(BASE + 'index.html#/a', { waitUntil: 'load' });
   await page.waitForSelector('#start-session');
   check('routine page shows planned time', (await text('.page-header')).includes('23 min'));
@@ -69,8 +77,20 @@ function check(name, ok, extra = '') {
   await page.click('.notch-minus');
   check('notch minus decrements', (await text('.notch-value')).includes('8 cm'));
   await shot('10-setup');
+  // A Pixel-sized viewport with the browser UI taking its share.
+  await page.setViewportSize({ width: 412, height: 780 });
+  let fit = await fits();
+  check('setup/transition screen fits a 780 px viewport without scrolling', fit.fits, JSON.stringify(fit));
+  await shot('10b-setup-780');
+  await page.setViewportSize({ width: 915, height: 340 });
+  fit = await fits();
+  check('setup/transition screen fits a 340 px tall landscape viewport', fit.fits, JSON.stringify(fit));
+  await shot('10c-setup-landscape');
+  await page.setViewportSize({ width: 412, height: 780 });
   await page.clock.runFor(30400);
   check('hold starts after 30 s', (await text('.phase-name')) === 'Settle', `(${await text('.phase-name')})`);
+  fit = await fits();
+  check('hold screen fits a 780 px viewport without scrolling', fit.fits, JSON.stringify(fit));
   check('digits count down', (await text('.timer-digits')) === '1:30' || (await text('.timer-digits')) === '1:29', `(${await text('.timer-digits')})`);
   check('header meta', (await text('.session-meta')) === 'Exercise 1 of 5 · Set 1 of 2 · Left', `(${await text('.session-meta')})`);
   await shot('11-hold-settle');
@@ -89,21 +109,26 @@ function check(name, ok, extra = '') {
   await page.clock.runFor(20200);
   check('side switch after hold (shifted by pause)', (await text('.phase-name')) === 'Switch sides', `(${await text('.phase-name')})`);
   await shot('13-switch');
-  // landscape look
-  await page.setViewportSize({ width: 915, height: 412 });
+  // landscape look, with the browser UI taking its share of a 412 px tall phone
+  await page.setViewportSize({ width: 915, height: 340 });
   await page.clock.runFor(10200);
   check('right side hold', (await text('.session-meta')).includes('Right'));
+  fit = await fits();
+  check('hold screen fits a 340 px tall landscape viewport', fit.fits, JSON.stringify(fit));
   await shot('14-hold-landscape');
-  await page.setViewportSize({ width: 412, height: 915 });
-  // arrow right skips through the rest of A1: hold2 (remaining), switch, hold3, switch, hold4 -> feel
+  await page.setViewportSize({ width: 412, height: 780 });
+  // arrow right skips through the rest of A1: hold2 (remaining), switch, hold3, switch, hold4 -> transition
   for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
-  check('feel screen after A1', (await text('.phase-name')) === 'How did it feel?', `(${await text('.phase-name')})`);
-  check('three feel buttons', (await page.$$('.feel-btn')).length === 3);
-  await shot('15-feel');
-  await page.click('.feel-btn[data-rating="faded"]');
-  check('exercise transition after rating', (await text('.phase-name')) === 'Next up' && (await text('.next-name')).includes('Squat Hang'));
+  check('exercise transition after A1', (await text('.phase-name')) === 'Next up' && (await text('.next-name')).includes('Squat Hang'), `(${await text('.phase-name')})`);
   check('transition shows squat notch', (await text('.notch-control')).includes('Heel lift'));
+  fit = await fits();
+  check('exercise transition fits a 780 px viewport without scrolling', fit.fits, JSON.stringify(fit));
   await shot('16-transition');
+  await page.setViewportSize({ width: 915, height: 340 });
+  fit = await fits();
+  check('exercise transition fits a 340 px tall landscape viewport', fit.fits, JSON.stringify(fit));
+  await shot('16b-transition-landscape');
+  await page.setViewportSize({ width: 412, height: 780 });
   await page.click('.ctl-skip'); // start now
   check('accumulate phase', (await page.getAttribute('.session', 'data-type')) === 'accumulate');
   await page.clock.runFor(50000);
@@ -113,9 +138,9 @@ function check(name, ok, extra = '') {
   await shot('17-accumulate-paused');
   await page.click('.ctl-toggle');
   await page.clock.runFor(190200);
-  check('accumulate completes at target -> feel', (await text('.phase-name')) === 'How did it feel?');
-  await page.clock.runFor(10200); // auto-select held
-  check('feel auto-advances', (await text('.phase-name')) === 'Next up');
+  check('accumulate completes at target -> next transition', (await text('.phase-name')) === 'Next up', `(${await text('.phase-name')})`);
+  await page.clock.runFor(20200);
+  check('transition runs out into the next hold', (await text('.phase-name')) === 'Settle', `(${await text('.phase-name')})`);
   // Run the rest of the session quickly.
   for (let i = 0; i < 200 && (await page.$('.session')); i++) await page.clock.runFor(30000);
   await page.waitForSelector('.end-screen');
@@ -126,25 +151,21 @@ function check(name, ok, extra = '') {
   await shot('18-end');
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('stretch.v1')));
   check('session recorded', stored.sessions.length === 1 && stored.sessions[0].completed === true && stored.sessions[0].routine === 'A');
-  check('rating recorded', stored.sessions[0].feels.some((f) => f.exerciseId === 'A1' && f.rating === 'faded'));
   check('longest chunk recorded', stored.sessions[0].longestSquatChunk === 190 || stored.sessions[0].longestSquatChunk === 240, `(${stored.sessions[0].longestSquatChunk})`);
   await page.click('#end-home');
   await page.waitForTimeout(50);
   const home = await text('#app');
   check('home shows done today', home.includes('Done today'));
-  check('week dot done', (await page.$$('.dot-done')).length === 1 || home.includes('Sessions completed 1/4'));
+  check('week dot done', (await page.$$('.dot-done')).length === 1 && /Sessions completed\s*1\/4/.test(home), `(${(await page.$$('.dot-done')).length})`);
   check('program week shown', home.includes('Week 1'));
   await shot('19-home-after');
 
-  // Second session: suggestion should show on the setup screen for A1 (faded -> deeper).
+  // Second session: the setup screen shows the notch control again.
   await page.goto(BASE + '#/a');
   await page.click('#start-session');
   await page.waitForSelector('.session');
-  const setupText = await text('.session');
-  check('suggestion shown from last rating', setupText.includes('Last time: Faded to 4 or less') && setupText.includes('Go one notch deeper: 9 cm'), `(${setupText.slice(0, 200)})`);
-  await page.click('.sug-apply');
-  check('one-tap deeper applied', (await text('.notch-value')).includes('9 cm') && (await text('.notch-control')).includes('Applied'));
-  await shot('20-suggestion');
+  check('setup screen shows the notch control', (await text('.notch-control')).includes('Foot to wall') && (await text('.notch-value')).includes('8 cm'), `(${await text('.notch-control')})`);
+  await shot('20-setup-again');
   // End early via double tap End.
   await page.click('.ctl-end');
   check('end needs confirm', (await text('.ctl-end')) === 'Tap again to end');

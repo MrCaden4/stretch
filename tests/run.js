@@ -45,14 +45,13 @@ function runToEnd(engine, clock, stepMs = 200) {
 }
 
 function recorder(engine, clock) {
-  const log = { cues: [], dropped: [], phases: [], ends: [], finish: null, ratings: [] };
+  const log = { cues: [], dropped: [], phases: [], ends: [], finish: null };
   engine.on((type, d) => {
     if (type === 'cue') log.cues.push({ index: d.index, at: d.cue.at, say: d.cue.say, wall: clock.now(), lag: d.lag });
     if (type === 'cueDropped') log.dropped.push({ index: d.index, at: d.cue.at, lag: d.lag });
     if (type === 'phase') log.phases.push({ index: d.index, at: d.at });
     if (type === 'phaseEnd') log.ends.push({ index: d.index, reason: d.reason });
     if (type === 'finish') log.finish = d;
-    if (type === 'rating') log.ratings.push(d);
   });
   return log;
 }
@@ -74,9 +73,7 @@ const EXPECTED_RANGE_MIN = { A: [23, 24], B: [25, 26], min: [10, 11] };
 for (const id of Object.keys(ROUTINES)) {
   const ph = expandRoutine(ROUTINES[id]);
   const sec = plannedSeconds(ph);
-  console.log(
-    `  ${ROUTINES[id].name.padEnd(20)} ${formatClock(sec)}  (${(sec / 60).toFixed(2)} min, ${ph.length} phases, ${formatClock(totalSeconds(ph))} with feel screens)`
-  );
+  console.log(`  ${ROUTINES[id].name.padEnd(20)} ${formatClock(sec)}  (${(sec / 60).toFixed(2)} min, ${ph.length} phases)`);
 }
 console.log('');
 
@@ -106,7 +103,7 @@ test('every session starts with the 30 s setup transition', () => {
 });
 
 test('A1 is 4 x 90 s alternating L, R, L, R with 10 s side switches', () => {
-  const ph = expandRoutine(ROUTINES.A).filter((p) => p.meta.exerciseId === 'A1' && p.type !== 'feel');
+  const ph = expandRoutine(ROUTINES.A).filter((p) => p.meta.exerciseId === 'A1');
   const holds = ph.filter((p) => p.type === 'hold');
   const switches = ph.filter((p) => p.kind === 'side');
   assert.equal(holds.length, 4);
@@ -122,20 +119,14 @@ test('A1 is 4 x 90 s alternating L, R, L, R with 10 s side switches', () => {
   assert.match(holds[0].cues[2].say, /Relax, exhale, sink/);
 });
 
-test('A has 4 exercise transitions of 20 s and one feel screen per exercise', () => {
+test('A has 4 exercise transitions of 20 s with a long beep, and no feel screens', () => {
   const ph = expandRoutine(ROUTINES.A);
   const ex = ph.filter((p) => p.kind === 'exercise');
   assert.equal(ex.length, 4);
-  assert.ok(ex.every((p) => p.seconds === 20 && p.next && p.next.setup));
-  const feels = ph.filter((p) => p.type === 'feel');
-  assert.equal(feels.length, 5);
-  assert.deepEqual(feels.map((f) => f.meta.exerciseId), ['A1', 'A2', 'A3', 'A4', 'A5']);
-  // Feel screen immediately follows the exercise's last work phase.
-  feels.forEach((f) => {
-    const i = ph.indexOf(f);
-    assert.notEqual(ph[i - 1].type, 'transition');
-    assert.equal(ph[i - 1].meta.exerciseId, f.meta.exerciseId);
-  });
+  assert.ok(ex.every((p) => p.seconds === 20 && p.next && p.next.setup && p.cues[0].sound === 'long'));
+  assert.deepEqual(ex.map((p) => p.next.id), ['A2', 'A3', 'A4', 'A5']);
+  assert.equal(ph.filter((p) => p.type === 'feel').length, 0);
+  assert.equal(ph.length, 24);
 });
 
 test('A2 squat hang accumulates 4:00 with a reminder every 60 s', () => {
@@ -146,7 +137,7 @@ test('A2 squat hang accumulates 4:00 with a reminder every 60 s', () => {
 });
 
 test('A3 is 90 s hold then 5 lift-offs at 3 s per side', () => {
-  const ph = expandRoutine(ROUTINES.A).filter((p) => p.meta.exerciseId === 'A3' && p.type !== 'feel' && p.kind !== 'exercise');
+  const ph = expandRoutine(ROUTINES.A).filter((p) => p.meta.exerciseId === 'A3' && p.kind !== 'exercise');
   assert.deepEqual(ph.map((p) => p.type), ['hold', 'reps', 'transition', 'hold', 'reps']);
   const reps = ph[1];
   assert.equal(reps.seconds, 15);
@@ -171,7 +162,7 @@ test('B1 couch CR timeline is 50/60/70 over 90 s, 4 holds', () => {
 });
 
 test('B3 has two unsided 90 s holds with a 20 s rest and cues at 30 and 60', () => {
-  const ph = expandRoutine(ROUTINES.B).filter((p) => p.meta.exerciseId === 'B3' && p.type !== 'feel' && p.kind !== 'exercise');
+  const ph = expandRoutine(ROUTINES.B).filter((p) => p.meta.exerciseId === 'B3' && p.kind !== 'exercise');
   assert.deepEqual(ph.map((p) => p.type), ['hold', 'transition', 'hold']);
   assert.equal(ph[1].kind, 'rest');
   assert.equal(ph[1].seconds, 20);
@@ -182,7 +173,7 @@ test('B3 has two unsided 90 s holds with a 20 s rest and cues at 30 and 60', () 
 });
 
 test('B4 butterfly is one 120 s hold with lifts at 30, 60, 90', () => {
-  const ph = expandRoutine(ROUTINES.B).filter((p) => p.meta.exerciseId === 'B4' && p.type !== 'feel' && p.kind !== 'exercise');
+  const ph = expandRoutine(ROUTINES.B).filter((p) => p.meta.exerciseId === 'B4' && p.kind !== 'exercise');
   assert.equal(ph.length, 1);
   assert.equal(ph[0].seconds, 120);
   const lifts = ph[0].cues.filter((c) => /Lift the knees into the forearms/.test(c.say)).map((c) => c.at);
@@ -243,7 +234,7 @@ test('cues are sorted, unique in time, inside the phase, and every phase starts 
       assert.equal(p.cues[0].at, 0);
       for (let i = 1; i < p.cues.length; i++) assert.ok(p.cues[i].at > p.cues[i - 1].at, `${id} ${p.label} cue order`);
       assert.ok(p.cues[p.cues.length - 1].at < p.seconds, `${id} ${p.label} last cue before end`);
-      assert.ok(['hold', 'accumulate', 'reps', 'transition', 'feel'].includes(p.type));
+      assert.ok(['hold', 'accumulate', 'reps', 'transition'].includes(p.type));
       assert.ok(p.meta && typeof p.meta.exerciseCount === 'number');
     }
   }
@@ -306,8 +297,6 @@ for (const id of Object.keys(ROUTINES)) {
     assert.equal(s.exercisesTotal, ROUTINES[id].exercises.length);
     assert.equal(s.exercisesCompleted, s.exercisesTotal);
     assert.equal(s.durationSeconds, totalSeconds(phases));
-    assert.equal(s.ratings.length, s.exercisesTotal);
-    assert.ok(s.ratings.every((r) => r.rating === 'held' && r.auto === true));
     const squat = phases.filter((p) => p.type === 'accumulate' && p.meta.notch === 'squatHang');
     const expectLongest = squat.length ? Math.max(...squat.map((p) => p.seconds)) : 0;
     assert.equal(s.longestSquatChunk, expectLongest);
@@ -321,7 +310,7 @@ console.log('\nEngine behaviour');
 test('pause stops the clock and shifts later cues and the phase end', () => {
   const routine = miniRoutine([{ id: 'T1', name: 'Hold', notch: 'soleus', setup: 'x', sides: ['L'], rounds: 1, unit: [{ type: 'hold', seconds: 90, cues: HOLD_CUES }] }]);
   const phases = expandRoutine(routine);
-  assert.deepEqual(phases.map((p) => p.type), ['hold', 'feel']);
+  assert.deepEqual(phases.map((p) => p.type), ['hold']);
   const clock = fakeClock();
   const engine = new SessionEngine(phases, { now: clock.now });
   const log = recorder(engine, clock);
@@ -343,8 +332,8 @@ test('pause stops the clock and shifts later cues and the phase end', () => {
   assert.equal(log.cues[1].say, 'contract');
   assert.ok(Math.abs(log.cues[1].wall - (t0 + 80000)) <= 200, 'contract at 80 s wall time');
   run(engine, clock, 40);
-  assert.equal(engine.index, 1);
-  assert.equal(log.phases[1].at, t0 + 110000, 'phase end shifted by the 20 s pause');
+  assert.equal(engine.status, 'finished');
+  assert.equal(engine.finishedAt, t0 + 110000, 'phase end shifted by the 20 s pause');
 });
 
 test('catch-up after the tab was hidden: phases advance, stale cues (> 5 s) are dropped', () => {
@@ -417,7 +406,7 @@ test('accumulate: chunk resets on pause, longest chunk is tracked, completes at 
   assert.deepEqual(engine.snapshot().accumulate.chunks, [50, 70]);
   engine.resume();
   run(engine, clock, 120);
-  assert.equal(engine.index, 1, 'moved to the feel screen when the target was reached');
+  assert.equal(engine.status, 'finished', 'finished when the target was reached');
   const r = engine.accumulateResults[0];
   assert.equal(r.accumulated, 240);
   assert.equal(r.longestChunk, 120);
@@ -444,7 +433,7 @@ test('ending early records the partial squat hang and marks the session incomple
   const s = engine.summary();
   assert.equal(s.endedEarly, true);
   assert.equal(s.completed, false);
-  assert.equal(s.exercisesCompleted, 1, 'A1 was passed (its feel screen was reached)');
+  assert.equal(s.exercisesCompleted, 1, 'A1 counts: its last hold was skipped through');
   assert.equal(s.longestSquatChunk, 100);
   assert.ok(log.finish);
   // Controls are inert after finishing.
@@ -454,32 +443,48 @@ test('ending early records the partial squat hang and marks the session incomple
   assert.equal(engine.status, 'finished');
 });
 
-test('feel screen auto-selects "held" after 10 s; a tap records the rating and moves on', () => {
-  const routine = miniRoutine([
-    { id: 'T1', name: 'One', notch: 'soleus', setup: 'x', sides: null, rounds: 1, unit: [{ type: 'hold', seconds: 5, cues: [{ at: 0, say: 'go', segment: 'settle', label: 'Settle' }] }] },
-    { id: 'T2', name: 'Two', notch: 'couch', setup: 'y', sides: null, rounds: 1, unit: [{ type: 'hold', seconds: 5, cues: [{ at: 0, say: 'go', segment: 'settle', label: 'Settle' }] }] },
-  ], { transitions: { exercise: 10 } });
+test('an exercise counts as completed when its last work phase runs out or is skipped', () => {
+  const cue = [{ at: 0, say: 'go', segment: 'settle', label: 'Settle' }];
+  const routine = miniRoutine(
+    [
+      { id: 'T1', name: 'One', notch: 'soleus', setup: 'x', sides: ['L', 'R'], rounds: 1, unit: [{ type: 'hold', seconds: 5, cues: cue }] },
+      { id: 'T2', name: 'Two', notch: 'couch', setup: 'y', sides: null, rounds: 1, unit: [{ type: 'hold', seconds: 5, cues: cue }] },
+    ],
+    { transitions: { side: 5, exercise: 10 } }
+  );
   const phases = expandRoutine(routine);
-  assert.deepEqual(phases.map((p) => p.type), ['hold', 'feel', 'transition', 'hold', 'feel']);
-  const clock = fakeClock();
-  const engine = new SessionEngine(phases, { now: clock.now });
-  const log = recorder(engine, clock);
+  assert.deepEqual(phases.map((p) => p.type), ['hold', 'transition', 'hold', 'transition', 'hold']);
+  assert.equal(phases[3].cues[0].sound, 'long', 'exercise transition opens with the long beep');
+  let clock = fakeClock();
+  let engine = new SessionEngine(phases, { now: clock.now });
   engine.start();
-  assert.equal(engine.rate('faded'), false, 'rate() ignored outside a feel screen');
-  run(engine, clock, 5);
-  assert.equal(engine.index, 1);
-  assert.equal(phases[1].seconds, 10);
-  run(engine, clock, 10);
-  assert.equal(engine.index, 2, 'auto-advanced after 10 s');
-  assert.deepEqual(engine.ratings, [{ exerciseId: 'T1', notch: 'soleus', rating: 'held', auto: true }]);
-  run(engine, clock, 10 + 5);
+  assert.equal(engine.exercisesTotal(), 2);
+  run(engine, clock, 5); // left hold runs out -> side switch
+  assert.equal(engine.exercisesCompleted(), 0, 'one side done is not the exercise');
+  run(engine, clock, 5); // switch runs out -> right hold
+  assert.equal(engine.index, 2);
+  engine.skip(); // skip the right hold -> exercise transition
+  assert.equal(engine.exercisesCompleted(), 1, 'skipping the last hold still completes the exercise');
+  engine.back(); // back into the right hold
+  assert.equal(engine.exercisesCompleted(), 1);
+  engine.skip(); // transition
+  engine.skip(); // T2 hold
   assert.equal(engine.index, 4);
-  run(engine, clock, 3);
-  assert.equal(engine.rate('faded'), true);
-  assert.equal(engine.status, 'finished');
-  assert.deepEqual(engine.ratings[1], { exerciseId: 'T2', notch: 'couch', rating: 'faded', auto: false });
-  assert.equal(log.ratings.length, 2);
-  assert.equal(engine.summary().completed, true);
+  run(engine, clock, 2);
+  engine.end();
+  let s = engine.summary();
+  assert.equal(s.exercisesCompleted, 1);
+  assert.equal(s.completed, false);
+  assert.equal(s.endedEarly, true);
+  // Running to the end completes everything.
+  clock = fakeClock();
+  engine = new SessionEngine(phases, { now: clock.now });
+  engine.start();
+  runToEnd(engine, clock);
+  s = engine.summary();
+  assert.equal(s.exercisesCompleted, 2);
+  assert.equal(s.completed, true);
+  assert.equal(s.durationSeconds, 30);
 });
 
 test('skip, back and +15 s move through phases and extend the current one', () => {
@@ -620,8 +625,8 @@ test('next session line', () => {
   assert.equal(S.nextSessionLine(D('2026-10-01')), 'Next: Session A, Monday. Off days: optional 3-min squat hang.');
 });
 
-function sessionRec(date, routine, completed = true, feels = []) {
-  return { id: date + routine, date, startedAt: `${date}T19:30:00.000Z`, routine, completed, durationSeconds: 1400, exercisesCompleted: 5, exercisesTotal: 5, feels, longestSquatChunk: 0, notches: {} };
+function sessionRec(date, routine, completed = true) {
+  return { id: date + routine, date, startedAt: `${date}T19:30:00.000Z`, routine, completed, durationSeconds: 1400, exercisesCompleted: 5, exercisesTotal: 5, longestSquatChunk: 0, notches: {} };
 }
 
 test('week tracker: done / minimum / missed / upcoming, n of 4, off days do not count', () => {
@@ -685,20 +690,6 @@ test('test days: every other Monday from the test start; baseline missing -> no 
   assert.equal(S.isTestDay(s2, D('2026-10-12')), true);
 });
 
-test('suggestions come from the last rating per notch key across sessions', () => {
-  const state = S.defaultState();
-  assert.equal(S.suggestionFor(state, 'soleus'), null);
-  state.sessions.push(sessionRec('2026-09-28', 'A', true, [{ exerciseId: 'A1', notch: 'soleus', rating: 'faded' }, { exerciseId: 'A5', notch: 'couch', rating: 'held' }]));
-  state.sessions.push(sessionRec('2026-09-29', 'B', true, [{ exerciseId: 'B1', notch: 'couch', rating: 'pinch' }]));
-  assert.equal(S.suggestionFor(state, 'soleus').action, 'deeper');
-  assert.equal(S.suggestionFor(state, 'soleus').text, 'Go one notch deeper today');
-  assert.equal(S.suggestionFor(state, 'couch').action, 'backoff');
-  assert.equal(S.suggestionFor(state, 'couch').text, 'Back off one notch and change the angle');
-  assert.equal(S.suggestionFor(state, 'butterfly'), null);
-  const l = S.lastRatings(state);
-  assert.equal(l.couch.exerciseId, 'B1');
-});
-
 test('notch adjustments respect direction and bounds', () => {
   const state = S.defaultState();
   assert.equal(S.adjustNotch(state, 'soleus', 'deeper'), 9);
@@ -727,7 +718,6 @@ test('record a session from an engine summary', () => {
   assert.equal(rec.completed, true);
   assert.equal(rec.exercisesCompleted, 4);
   assert.equal(rec.longestSquatChunk, 180);
-  assert.equal(rec.feels.length, 4);
   assert.equal(rec.durationSeconds, totalSeconds(phases));
   assert.equal(state.sessions.length, 1);
   assert.ok(S.isCountedSession(rec));

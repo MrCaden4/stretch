@@ -121,12 +121,6 @@ export const NOTCHES = {
   },
 };
 
-export const FEEL_OPTIONS = [
-  { id: 'faded', label: 'Faded to 4 or less', suggestion: 'Go one notch deeper today', action: 'deeper' },
-  { id: 'held', label: 'Held at 6-7', suggestion: 'Repeat last notch', action: 'repeat' },
-  { id: 'pinch', label: 'Pinch or too hard', suggestion: 'Back off one notch and change the angle', action: 'backoff' },
-];
-
 // ---- Cue timelines --------------------------------------------------------
 
 const settle = (say) => ({ at: 0, say, label: 'Settle', segment: 'settle' });

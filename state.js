@@ -1,9 +1,9 @@
 // state.js
 // localStorage state ("stretch.v1"), dates, schedule, week tracker, desk
-// phases, suggestions, tests history. Pure functions: no DOM. app.js passes
+// phases, tests history. Pure functions: no DOM. app.js passes
 // `today` in; tests pass fixed dates and a fake storage object.
 
-import { NOTCHES, ROUTINES, DESK_PHASES, TESTS, FEEL_OPTIONS } from './data/routines.js';
+import { NOTCHES, ROUTINES, DESK_PHASES, TESTS } from './data/routines.js';
 
 export const STORAGE_KEY = 'stretch.v1';
 export const STATE_VERSION = 1;
@@ -293,7 +293,7 @@ export function weekSummary(state, today) {
 }
 
 // ---------------------------------------------------------------------------
-// Sessions and suggestions
+// Sessions
 // ---------------------------------------------------------------------------
 
 let idCounter = 0;
@@ -314,33 +314,11 @@ export function recordSession(state, routineId, summary, startedAtMs) {
     durationSeconds: summary.durationSeconds,
     exercisesCompleted: summary.exercisesCompleted,
     exercisesTotal: summary.exercisesTotal,
-    feels: summary.ratings.map((r) => ({ exerciseId: r.exerciseId, notch: r.notch, rating: r.rating, auto: r.auto })),
     longestSquatChunk: Math.round(summary.longestSquatChunk),
     notches: { ...state.notches },
   };
   state.sessions.push(rec);
   return rec;
-}
-
-// Latest rating per notch key, scanning sessions newest first.
-export function lastRatings(state) {
-  const out = {};
-  const sessions = state.sessions.slice().sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
-  for (const s of sessions) {
-    for (const f of s.feels || []) {
-      if (f.notch && !(f.notch in out)) out[f.notch] = { rating: f.rating, date: s.date, exerciseId: f.exerciseId };
-    }
-  }
-  return out;
-}
-
-export function suggestionFor(state, notchKey) {
-  if (!notchKey) return null;
-  const last = lastRatings(state)[notchKey];
-  if (!last) return null;
-  const opt = FEEL_OPTIONS.find((o) => o.id === last.rating);
-  if (!opt) return null;
-  return { rating: last.rating, ratingLabel: opt.label, text: opt.suggestion, action: opt.action, date: last.date };
 }
 
 export function clampNotch(key, value) {
