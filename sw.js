@@ -3,7 +3,7 @@
  * Navigations: network first, cached index.html when offline.
  * Assets: cache first, filled on first fetch.
  */
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `stretch-${CACHE_VERSION}`;
 const PRECACHE = [
   './',

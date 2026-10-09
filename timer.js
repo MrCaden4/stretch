@@ -7,10 +7,8 @@
 export const DEFAULTS = {
   sideSwitchSeconds: 10,
   exerciseTransitionSeconds: 20,
-  feelSeconds: 10,
   staleCueSeconds: 5,
   kettlebellKg: 16,
-  autoRating: 'held',
 };
 
 const SIDE_NAME = { L: 'Left', R: 'Right' };
@@ -80,7 +78,7 @@ export function expandRoutine(routine, opts = {}) {
         seconds: exSec,
         label: 'Next up',
         instruction: fill(ex.setup),
-        cues: [{ at: 0, say, label: 'Next up', segment: 'transition', sound: 'single' }],
+        cues: [{ at: 0, say, label: 'Next up', segment: 'transition', sound: 'long', vibrate: 'long' }],
         next: nextInfo(ex, ei),
         meta: { ...info, set: 1, sets, side: sides[0] },
       });
@@ -120,16 +118,6 @@ export function expandRoutine(routine, opts = {}) {
         unitNo++;
       }
     }
-
-    phases.push({
-      type: 'feel',
-      seconds: o.feelSeconds,
-      label: 'How did it feel?',
-      instruction: ex.name,
-      cues: [{ at: 0, say: 'Done. How did it feel?', label: 'Rate it', segment: 'feel', sound: 'long', vibrate: 'long' }],
-      autoRating: o.autoRating,
-      meta: { ...info, set: sets, sets, side: null },
-    });
   });
 
   // Normalise: cues sorted by time, default sounds.
@@ -205,10 +193,9 @@ function blockToPhase(block, ex, meta, fill) {
   throw new Error(`Unknown block type: ${block.type}`);
 }
 
-// Planned time = holds + reps + accumulate targets + transitions. Feel screens
-// are excluded because they are usually tapped through in a second or two.
+// Planned time = holds + reps + accumulate targets + transitions.
 export function plannedSeconds(phases) {
-  return phases.reduce((sum, p) => (p.type === 'feel' ? sum : sum + p.seconds), 0);
+  return phases.reduce((sum, p) => sum + p.seconds, 0);
 }
 
 export function totalSeconds(phases) {
@@ -246,8 +233,8 @@ export class SessionEngine {
     this.startedAt = null;
     this.finishedAt = null;
     this.endedEarly = false;
-    this.ratings = []; // { exerciseId, notch, rating, auto }
     this.accumulateResults = []; // { index, exerciseId, notch, accumulated, longestChunk, chunks }
+    this.completedIndexes = new Set(); // phases finished by running out or by skip
     this.maxIndexReached = -1;
     this.extra = new Map(); // phase index -> extra seconds added with +15
   }
@@ -368,18 +355,8 @@ export class SessionEngine {
     const phase = this.phases[i];
     const el = Math.min(this._elapsedMs(atWall), this.durationMs(i));
     if (phase.type === 'accumulate') this._recordAccumulate(i, el);
-    if (phase.type === 'feel' && reason === 'complete' && phase.autoRating) {
-      this._setRating(phase, phase.autoRating, true);
-    }
+    if (reason === 'complete' || reason === 'skip') this.completedIndexes.add(i);
     this._emit('phaseEnd', { index: i, phase, reason, at: atWall });
-  }
-
-  _setRating(phase, rating, auto) {
-    const rec = { exerciseId: phase.meta.exerciseId, notch: phase.meta.notch, rating, auto: !!auto };
-    const k = this.ratings.findIndex((r) => r.exerciseId === rec.exerciseId);
-    if (k >= 0) this.ratings[k] = rec;
-    else this.ratings.push(rec);
-    this._emit('rating', rec);
   }
 
   _finish(atWall, endedEarly) {
@@ -469,38 +446,26 @@ export class SessionEngine {
     this._finish(now, true);
   }
 
-  // Rate the current feel screen and move on.
-  rate(rating) {
-    if (this.status !== 'running' && this.status !== 'paused') return false;
-    const now = this.now();
-    if (this.status === 'running') this.tick(now);
-    const phase = this.phases[this.index];
-    if (!phase || phase.type !== 'feel') return false;
-    this._setRating(phase, rating, false);
-    this._complete(this.index, 'rated', now);
-    this._enter(this.index + 1, now);
-    if (this.status === 'running') this.tick(now);
-    return true;
-  }
-
   // ---- read model -----------------------------------------------------------
 
-  _feelIndexByExercise() {
+  // Index of the last work phase (hold, reps, accumulate) of each exercise.
+  _lastWorkIndexByExercise() {
     const map = new Map();
     this.phases.forEach((p, i) => {
-      if (p.type === 'feel') map.set(p.meta.exerciseIndex, i);
+      if (WORK_TYPES.has(p.type) && p.meta && p.meta.exerciseIndex >= 0) map.set(p.meta.exerciseIndex, i);
     });
     return map;
   }
 
   exercisesTotal() {
-    return this._feelIndexByExercise().size;
+    return this._lastWorkIndexByExercise().size;
   }
 
+  // An exercise counts once its last work phase ran out or was skipped.
   exercisesCompleted() {
     let n = 0;
-    for (const [, feelIndex] of this._feelIndexByExercise()) {
-      if (this.maxIndexReached >= feelIndex) n++;
+    for (const [, lastIndex] of this._lastWorkIndexByExercise()) {
+      if (this.completedIndexes.has(lastIndex)) n++;
     }
     return n;
   }
@@ -525,7 +490,6 @@ export class SessionEngine {
       endedEarly: this.endedEarly,
       exercisesCompleted: done,
       exercisesTotal: total,
-      ratings: this.ratings.slice(),
       accumulate: this.accumulateResults.slice(),
       longestSquatChunk: this.longestSquatChunk(),
     };
@@ -597,7 +561,6 @@ const DEFAULT_SEGMENT = {
   accumulate: { segment: 'accumulate', label: 'Accumulate' },
   reps: { segment: 'lift', label: 'Lift' },
   transition: { segment: 'transition', label: 'Transition' },
-  feel: { segment: 'feel', label: 'Rate it' },
 };
 
 // The segment (name, colour, instruction) currently in force inside a phase:

@@ -7,7 +7,6 @@ import {
   ROUTINES,
   RULES,
   NOTCHES,
-  FEEL_OPTIONS,
   SCHEDULE,
   SCHEDULE_NOTE,
   EXPECTATIONS,
@@ -22,7 +21,7 @@ import { GUIDE, guideSection } from './data/guide.js';
 import { expandRoutine, SessionEngine, plannedSeconds, formatClock, sideName } from './timer.js';
 import * as S from './state.js';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 const REPO_URL = 'https://github.com/MrCaden4/stretch';
 const ROUTE_FOR_ROUTINE = { A: 'a', B: 'b', min: 'min', off: 'off' };
 
@@ -31,7 +30,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 let state = S.loadState();
-let activeSession = null; // { routineId, routine, phases, engine, interval, applied, dom, builtIndex, confirmEnd }
+let activeSession = null; // { routineId, routine, phases, engine, interval, dom, builtIndex, confirmEnd }
 let lastSummary = null; // { routineId, summary, record }
 let miniTimer = null; // { id, label, engine, interval, onDone }
 let testFlow = null; // { step, values, date, stopwatch }
@@ -353,7 +352,9 @@ function viewHome() {
   const minLine = minDone ? `<p><strong>Minimum done today</strong> (${formatClock(minDone.durationSeconds)}). Counts as a completed day.</p>` : '';
   if (plan === 'off') {
     const off = S.sessionsOn(state, key).find((s) => s.routine === 'off' && s.completed);
-    todayCard = `<section class="card"><h2>Today: Off day</h2><p>Off day: surf, skate, or a 3-minute squat hang.</p>${minLine}${
+    const extra = doneToday.filter((s) => s.routine === 'A' || s.routine === 'B');
+    const extraLine = extra.length ? `<p><strong>Done today:</strong> ${extra.map((s) => `${esc(ROUTINES[s.routine].name)} (${formatClock(s.durationSeconds)})`).join(', ')}.</p>` : '';
+    todayCard = `<section class="card"><h2>Today: Off day</h2><p>Off day: surf, skate, or a 3-minute squat hang.</p>${extraLine}${minLine}${
       off ? `<p><strong>Squat hang done today.</strong> Longest chunk ${formatClock(off.longestSquatChunk || 0)}.</p>` : ''
     }<a class="btn ${off ? '' : 'btn-primary btn-big'} btn-block" href="#/off">3-min squat hang</a><a class="btn btn-block" href="#/min" style="margin-top:10px">Bad day? Minimum, 10 min</a></section>`;
   } else {
@@ -458,16 +459,13 @@ function renderRoutineOverview(id) {
   const planned = plannedSeconds(phases);
   const busy = !!activeSession;
   const exercises = r.exercises
-    .map((ex) => {
-      const sug = S.suggestionFor(state, ex.notch);
-      return `<li>
+    .map(
+      (ex) => `<li>
         <div class="ex-name">${esc(ex.id)} · ${esc(ex.name)}</div>
         <div class="ex-dose">${esc(ex.dose)}. ${esc(ex.intensity)}</div>
-        <div class="muted small">${esc(NOTCHES[ex.notch].label)}: ${esc(notchDisplay(ex.notch, state.notches[ex.notch]))}${
-          sug ? ` · Last time: ${esc(sug.ratingLabel)}. ${esc(sug.text)}.` : ''
-        }</div>
-      </li>`;
-    })
+        <div class="muted small">${esc(NOTCHES[ex.notch].label)}: ${esc(notchDisplay(ex.notch, state.notches[ex.notch]))}</div>
+      </li>`
+    )
     .join('');
   const note =
     id === 'min'
@@ -495,7 +493,7 @@ function startSession(routineId) {
   const routine = ROUTINES[routineId];
   const phases = expandRoutine(routine, settingsOpts());
   const engine = new SessionEngine(phases);
-  const s = { routineId, routine, phases, engine, interval: null, applied: {}, dom: null, builtIndex: -1, confirmEnd: false };
+  const s = { routineId, routine, phases, engine, interval: null, dom: null, builtIndex: -1, confirmEnd: false };
   activeSession = s;
   lastSummary = null;
   engine.on((type, data) => {
@@ -542,9 +540,8 @@ function metaLine(phase) {
   if (m.exerciseCount) {
     parts.push(`${phase.kind === 'exercise' ? 'Next: exercise' : 'Exercise'} ${m.exerciseIndex + 1} of ${m.exerciseCount}`);
   }
-  if (m.sets > 1 && phase.type !== 'feel') parts.push(`Set ${m.set} of ${m.sets}`);
+  if (m.sets > 1) parts.push(`Set ${m.set} of ${m.sets}`);
   if (m.side) parts.push(sideName(m.side));
-  if (phase.type === 'feel') parts.push('Rate it');
   return parts.join(' · ');
 }
 
@@ -563,8 +560,7 @@ function buildSessionScreen() {
     </header>`)
   );
   const body = el('<div class="session-body"></div>');
-  if (phase.type === 'feel') buildFeelBody(body, phase);
-  else if (phase.type === 'transition') buildTransitionBody(body, phase);
+  if (phase.type === 'transition') buildTransitionBody(body, phase);
   else buildWorkBody(body, phase);
   root.appendChild(body);
   root.appendChild(buildControls(phase));
@@ -581,7 +577,6 @@ function buildSessionScreen() {
     sub: root.querySelector('.timer-sub'),
     phaseProgress: root.querySelector('.phase-progress > span'),
     toggle: root.querySelector('.ctl-toggle'),
-    feelCountdown: root.querySelector('.feel-countdown'),
   };
   s.builtIndex = snap.index;
   s.confirmEnd = false;
@@ -599,21 +594,6 @@ function buildWorkBody(body, phase) {
     <p class="instruction"></p>`;
 }
 
-function buildFeelBody(body, phase) {
-  const m = phase.meta || {};
-  body.innerHTML = `
-    <div class="exercise-name">${esc(m.exerciseName || '')}</div>
-    <div class="phase-name">How did it feel?</div>
-    <div class="feel-buttons">${FEEL_OPTIONS.map((o) => `<button class="btn btn-big feel-btn" data-rating="${esc(o.id)}">${esc(o.label)}</button>`).join('')}</div>
-    <div class="feel-countdown muted"></div>`;
-  bind(body, '.feel-btn', 'click', (e) => {
-    const s = activeSession;
-    if (!s) return;
-    s.engine.rate(e.currentTarget.dataset.rating);
-    updateSessionScreen();
-  });
-}
-
 function buildTransitionBody(body, phase) {
   const next = phase.next;
   const m = phase.meta || {};
@@ -622,7 +602,7 @@ function buildTransitionBody(body, phase) {
     nextHtml = `<h2 class="next-name">${esc(next.name)}</h2>
       <p class="instruction">${esc(next.setup)}</p>
       <p class="muted">${esc(next.dose)}${next.intensity ? ` · ${esc(next.intensity)}` : ''}</p>
-      ${next.notch ? notchControlHtml(next.notch, true) : ''}`;
+      ${next.notch ? notchControlHtml(next.notch) : ''}`;
   } else {
     nextHtml = `<h2 class="next-name">${esc(m.exerciseName || '')}${m.side ? ` · ${esc(sideName(m.side))}` : ''}</h2>
       <p class="instruction">${esc(phase.instruction)}</p>`;
@@ -632,27 +612,12 @@ function buildTransitionBody(body, phase) {
     <div class="timer-digits" role="timer" aria-live="off"></div>
     <div class="phase-progress" aria-hidden="true"><span></span></div>
     ${nextHtml}`;
-  if (next && next.notch) wireNotchControl(body, next.notch, true);
+  if (next && next.notch) wireNotchControl(body, next.notch);
 }
 
-function notchControlHtml(key, withSuggestion) {
+function notchControlHtml(key) {
   const def = NOTCHES[key];
   const value = state.notches[key] != null ? state.notches[key] : def.default;
-  let suggestion = '';
-  if (withSuggestion) {
-    const sug = S.suggestionFor(state, key);
-    if (sug) {
-      const applied = activeSession && activeSession.applied[key];
-      let action = '';
-      if (applied) action = `<div class="muted small">Applied: now ${esc(notchDisplay(key, state.notches[key]))}.</div>`;
-      else if (sug.action === 'deeper') {
-        action = `<button class="btn btn-secondary sug-apply" data-dir="deeper">Go one notch deeper: ${esc(notchDisplay(key, S.clampNotch(key, value + def.deeper)))}</button>`;
-      } else if (sug.action === 'backoff') {
-        action = `<button class="btn btn-secondary sug-apply" data-dir="easier">Back off one notch: ${esc(notchDisplay(key, S.clampNotch(key, value - def.deeper)))}</button>`;
-      }
-      suggestion = `<div class="suggestion suggestion-${esc(sug.action)}"><div><strong>Last time:</strong> ${esc(sug.ratingLabel)} (${esc(sug.date)}).</div><div>${esc(sug.text)}.</div>${action}</div>`;
-    }
-  }
   const hint = def.levels ? Object.entries(def.levels).map(([k, v]) => `${k} = ${v}`).join(', ') + (def.hint ? `. ${def.hint}` : '') : def.hint || '';
   return `<div class="notch-control" data-notch="${esc(key)}">
     <div class="notch-label">${esc(def.name)} notch: ${esc(def.label)}</div>
@@ -662,17 +627,16 @@ function notchControlHtml(key, withSuggestion) {
       <button class="btn notch-plus" aria-label="Increase ${esc(def.label)}">+</button>
     </div>
     <div class="muted small notch-hint">${esc(hint)}</div>
-    ${suggestion}
   </div>`;
 }
 
-function wireNotchControl(root, key, withSuggestion) {
+function wireNotchControl(root, key) {
   const box = root.querySelector(`.notch-control[data-notch="${key}"]`);
   if (!box) return;
   const refresh = () => {
-    const fresh = el(notchControlHtml(key, withSuggestion));
+    const fresh = el(notchControlHtml(key));
     box.replaceWith(fresh);
-    wireNotchControl(root, key, withSuggestion);
+    wireNotchControl(root, key);
   };
   box.querySelector('.notch-minus').addEventListener('click', () => {
     S.adjustNotch(state, key, -1);
@@ -684,24 +648,11 @@ function wireNotchControl(root, key, withSuggestion) {
     save();
     refresh();
   });
-  const apply = box.querySelector('.sug-apply');
-  if (apply) {
-    apply.addEventListener('click', () => {
-      S.adjustNotch(state, key, apply.dataset.dir);
-      if (activeSession) activeSession.applied[key] = true;
-      save();
-      refresh();
-    });
-  }
 }
 
 function buildControls(phase) {
   const wrap = el('<div class="controls-wrap"></div>');
-  if (phase.type === 'feel') {
-    wrap.innerHTML = `<div class="controls-secondary">
-      <button class="btn ctl-back" aria-label="Back one phase">Back</button>
-      <button class="btn ctl-end">End session</button></div>`;
-  } else if (phase.type === 'transition') {
+  if (phase.type === 'transition') {
     wrap.innerHTML = `<div class="controls"><button class="btn btn-primary btn-huge ctl-skip">Start now</button></div>
       <div class="controls-secondary">
       <button class="btn ctl-back" aria-label="Back one phase">Back</button>
@@ -772,10 +723,6 @@ function updateSessionScreen(snap) {
   }
   if (d.toggle) d.toggle.textContent = paused ? 'Resume' : 'Pause';
 
-  if (phase.type === 'feel') {
-    if (d.feelCountdown) d.feelCountdown.textContent = paused ? 'Paused' : `Auto-selects "Held at 6-7" in ${Math.ceil(snap.remaining)} s`;
-    return;
-  }
   if (phase.type === 'transition') {
     d.digits.textContent = formatClock(snap.remaining);
     if (d.phaseName) d.phaseName.textContent = paused ? 'Paused' : phase.label;
@@ -1348,9 +1295,9 @@ function glanceHtml() {
     <h3>Tests</h3><p>${esc(TEST_SCHEDULE_TEXT)} Six tests, about 5 minutes. See the Tests page.</p>
     <h3>Cue timelines</h3><ul>
       <li>Every session opens with a 30 s setup (mat out, kettlebell ready, shoes off), skippable.</li>
-      <li>Side switches are 10 s ("Switch sides", double beep); exercise transitions 20 s and read the next setup aloud. Minimum uses 5 s and 10 s.</li>
+      <li>Side switches are 10 s ("Switch sides", double beep); exercise transitions 20 s, open with a long beep for the finished exercise, and read the next setup aloud. Minimum uses 5 s and 10 s.</li>
       <li>Contract-relax cues arrive at the listed times; the on-screen phase name changes between Settle, Contract and Sink.</li>
-      <li>After every exercise a 10 s feel screen asks how it went and drives the next-session notch suggestion.</li>
+      <li>Apply the progression rule yourself: adjust the notch with the + and - buttons on each transition screen.</li>
     </ul>`;
 }
 
@@ -1406,7 +1353,7 @@ function viewSettings() {
     <section class="card">
       <h2>Notches</h2>
       <p class="muted small">Current values, also editable on each transition screen.</p>
-      ${Object.keys(NOTCHES).map((k) => notchControlHtml(k, false)).join('')}
+      ${Object.keys(NOTCHES).map((k) => notchControlHtml(k)).join('')}
     </section>
     <section class="card">
       <h2>Data</h2>
@@ -1462,7 +1409,7 @@ function viewSettings() {
   };
   dateField('#set-pstart', 'programStart');
   dateField('#set-tstart', 'testStart');
-  Object.keys(NOTCHES).forEach((k) => wireNotchControl($app, k, false));
+  Object.keys(NOTCHES).forEach((k) => wireNotchControl($app, k));
   $app.querySelector('#export').addEventListener('click', exportData);
   const fileInput = $app.querySelector('#import-file');
   $app.querySelector('#import').addEventListener('click', () => fileInput.click());
