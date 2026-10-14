@@ -211,6 +211,7 @@ input[type="number"], input[type="date"], input[type="text"], select {
   color: var(--text);
 }
 input[type="file"] { font: inherit; color: var(--text); }
+input[type="range"] { width: 100%; min-height: var(--tap); accent-color: var(--accent); margin: 0; }
 .switch {
   display: flex;
   align-items: center;

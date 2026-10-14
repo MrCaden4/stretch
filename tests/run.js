@@ -3,7 +3,7 @@
 // Run: node tests/run.js
 import assert from 'node:assert/strict';
 import { ROUTINES, NOTCHES } from '../data/routines.js';
-import { expandRoutine, SessionEngine, plannedSeconds, totalSeconds, formatClock, currentSegment } from '../timer.js';
+import { expandRoutine, SessionEngine, plannedSeconds, totalSeconds, formatClock, currentSegment, explainKey } from '../timer.js';
 import * as S from '../state.js';
 
 let passed = 0;
@@ -225,6 +225,49 @@ test('kettlebell kg is interpolated into setup text', () => {
   const b = expandRoutine(ROUTINES.A, { kettlebellKg: 20 }).find((p) => p.meta.exerciseId === 'A1' && p.type === 'hold');
   assert.match(b.instruction, /\(20 kg\)/);
   assert.ok(!/\{kb\}/.test(JSON.stringify(expandRoutine(ROUTINES.B, { kettlebellKg: 12 }))));
+});
+
+test('voice detail: repeat sides get short cues, setups are read once', () => {
+  const A = ROUTINES.A;
+  const once = expandRoutine(A); // default 'once', nothing heard yet
+  const holds = once.filter((p) => p.meta.exerciseId === 'A1' && p.type === 'hold');
+  assert.equal(holds[0].cues[0].say, 'Left. Settle at 7. Slow breathing, jaw loose.');
+  assert.equal(holds[1].cues[0].say, 'Right. Settle at 7.');
+  assert.equal(holds[0].cues[1].say, 'Contract: press the ball of the foot down, 10 seconds');
+  assert.equal(holds[1].cues[1].say, 'Contract, 10 seconds');
+  assert.ok(!('short' in holds[1].cues[1]), 'short variant is consumed, not exposed');
+  const setup = once[0];
+  assert.match(setup.cues[0].say, /^Mat out, kettlebell ready, shoes off\. First up: Loaded Soleus Hold\. Half-kneel/);
+  assert.deepEqual(setup.explains, [explainKey(A.exercises[0])]);
+  const t2 = once.find((p) => p.kind === 'exercise');
+  assert.match(t2.cues[0].say, /^Next: Squat Hang\. Feet shoulder-width/);
+  assert.deepEqual(t2.explains, [explainKey(A.exercises[1])]);
+  assert.match(once.find((p) => p.type === 'accumulate').cues[0].say, /^Squat hang\. Accumulate 4 minutes/);
+
+  // Once heard, only the names are spoken.
+  const heard = new Set(A.exercises.map(explainKey));
+  const again = expandRoutine(A, { heard });
+  assert.equal(again[0].cues[0].say, 'Mat out, kettlebell ready, shoes off. First up: Loaded Soleus Hold.');
+  assert.deepEqual(again[0].explains, []);
+  assert.equal(again.find((p) => p.kind === 'exercise').cues[0].say, 'Next: Squat Hang');
+  assert.equal(again.find((p) => p.type === 'accumulate').cues[0].say, 'Squat hang, 4 minutes.');
+  assert.equal(plannedSeconds(again), plannedSeconds(once), 'wording never changes timing');
+
+  // 'full' reads everything every time; 'minimal' never reads a setup.
+  const full = expandRoutine(A, { voiceDetail: 'full', heard });
+  assert.match(full.find((p) => p.kind === 'exercise').cues[0].say, /^Next: Squat Hang\. Feet/);
+  assert.equal(full.filter((p) => p.meta.exerciseId === 'A1' && p.type === 'hold')[1].cues[1].say, 'Contract: press the ball of the foot down, 10 seconds');
+  const minimal = expandRoutine(A, { voiceDetail: 'minimal' });
+  assert.equal(minimal.find((p) => p.kind === 'exercise').cues[0].say, 'Next: Squat Hang');
+  assert.equal(minimal.filter((p) => p.meta.exerciseId === 'A1' && p.type === 'hold')[0].cues[1].say, 'Contract, 10 seconds');
+  assert.equal(expandRoutine(A, { voiceDetail: 'bogus' }).find((p) => p.kind === 'exercise').cues[0].say, t2.cues[0].say, 'unknown mode falls back to once');
+
+  // Shared setup text shares a key (the three couch stretches); 90/90 with and without lift-offs do not.
+  assert.equal(explainKey(ROUTINES.A.exercises[4]), explainKey(ROUTINES.B.exercises[0]));
+  assert.equal(explainKey(ROUTINES.A.exercises[4]), explainKey(ROUTINES.min.exercises[2]));
+  assert.notEqual(explainKey(ROUTINES.A.exercises[2]), explainKey(ROUTINES.B.exercises[4]));
+  // Minimum's 10 s transitions never have room for a setup, whatever the mode.
+  assert.ok(expandRoutine(ROUTINES.min, { voiceDetail: 'full' }).filter((p) => p.kind === 'exercise').every((p) => p.explains.length === 0));
 });
 
 test('cues are sorted, unique in time, inside the phase, and every phase starts with a cue at 0', () => {
@@ -623,6 +666,26 @@ test('weekday plan: Mon/Wed A, Tue/Thu B, Fri-Sun off', () => {
 test('next session line', () => {
   assert.equal(S.nextSessionLine(D('2026-09-28')), 'Next: Session B, tomorrow (Tuesday).');
   assert.equal(S.nextSessionLine(D('2026-10-01')), 'Next: Session A, Monday. Off days: optional 3-min squat hang.');
+  assert.equal(S.nextSessionLine(D('2026-09-28'), 'B'), 'Next: Session A, tomorrow (Tuesday).');
+  assert.equal(S.nextSessionLine(D('2026-10-01'), 'A'), 'Next: Session B, Monday. Off days: optional 3-min squat hang.');
+});
+
+test('A and B alternate from the last completed session', () => {
+  const state = S.defaultState();
+  assert.equal(S.suggestedRoutine(state, D('2026-09-28')), 'A', 'Monday, no history: weekday plan');
+  assert.equal(S.suggestedRoutine(state, D('2026-09-29')), 'B');
+  assert.equal(S.suggestedRoutine(state, D('2026-10-02')), 'off');
+  state.sessions.push(sessionRec('2026-09-28', 'A'));
+  assert.equal(S.suggestedRoutine(state, D('2026-09-30')), 'B', 'Wednesday flips to B after a Monday A');
+  assert.equal(S.suggestedRoutine(state, D('2026-10-05')), 'B', 'a skipped week still flips');
+  state.sessions.push(sessionRec('2026-09-30', 'B'));
+  assert.equal(S.suggestedRoutine(state, D('2026-10-01')), 'A');
+  state.sessions.push(sessionRec('2026-10-01', 'A', false));
+  assert.equal(S.suggestedRoutine(state, D('2026-10-05')), 'A', 'an incomplete session does not flip');
+  state.sessions.push(sessionRec('2026-10-05', 'min'));
+  assert.equal(S.suggestedRoutine(state, D('2026-10-06')), 'A', 'Minimum does not flip');
+  assert.equal(S.lastMainSession(state).date, '2026-09-30');
+  assert.equal(S.suggestedRoutine(state, D('2026-10-03')), 'off', 'off days stay off days');
 });
 
 function sessionRec(date, routine, completed = true) {
@@ -768,12 +831,20 @@ test('test history: latest, previous, delta, noise flag', () => {
 test('export / import round trip and rejection of garbage', () => {
   const state = S.defaultState();
   state.settings.kettlebellKg = 24;
+  state.settings.voiceDetail = 'minimal';
+  state.settings.voiceVolume = 35;
+  state.heard = { xabc123: '2026-09-28' };
   state.sessions.push(sessionRec('2026-09-28', 'A'));
   S.updateDeskDay(state, '2026-09-28', { slantMinutes: 12 });
   const text = S.exportJSON(state);
   const back = S.importJSON(text);
   assert.deepEqual(back, S.normalizeState(state));
   assert.equal(back.settings.kettlebellKg, 24);
+  assert.equal(back.settings.voiceDetail, 'minimal');
+  assert.equal(back.settings.voiceVolume, 35);
+  assert.deepEqual(back.heard, { xabc123: '2026-09-28' });
+  assert.equal(S.defaultState().settings.voiceVolume, 70);
+  assert.deepEqual(S.normalizeState({ heard: 'nope' }).heard, {});
   assert.equal(back.sessions.length, 1);
   assert.throws(() => S.importJSON('42'));
   assert.throws(() => S.importJSON('{"foo":1}'));

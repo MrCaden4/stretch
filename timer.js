@@ -9,7 +9,24 @@ export const DEFAULTS = {
   exerciseTransitionSeconds: 20,
   staleCueSeconds: 5,
   kettlebellKg: 16,
+  // 'full': setup read on every transition, full cue text on every side/set.
+  // 'once': setup read the first time an exercise is done (tracked by `heard`),
+  //         full cue text on the first side/set, short cues after.
+  // 'minimal': setup never read, short cues always.
+  voiceDetail: 'once',
+  heard: null, // Set of explainKey() values already read aloud
 };
+
+export const VOICE_DETAILS = ['full', 'once', 'minimal'];
+
+// Stable key for an exercise's setup explanation. Exercises that share a setup
+// text (the three couch stretches) share a key.
+export function explainKey(exercise) {
+  const text = String(exercise.setup || exercise.name || '');
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) >>> 0;
+  return 'x' + h.toString(36);
+}
 
 const SIDE_NAME = { L: 'Left', R: 'Right' };
 
@@ -23,11 +40,21 @@ export function sideName(side) {
 
 export function expandRoutine(routine, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
+  if (!VOICE_DETAILS.includes(o.voiceDetail)) o.voiceDetail = DEFAULTS.voiceDetail;
+  const heard = o.heard instanceof Set ? o.heard : new Set(o.heard || []);
   const sideSec = routine.transitions && routine.transitions.side != null ? routine.transitions.side : o.sideSwitchSeconds;
   const exSec = routine.transitions && routine.transitions.exercise != null ? routine.transitions.exercise : o.exerciseTransitionSeconds;
   const fill = (s) => (s ? String(s).replace(/\{kb\}/g, String(o.kettlebellKg)) : s);
   const phases = [];
   const exCount = routine.exercises.length;
+
+  // Should this transition read the exercise's setup aloud?
+  const readSetup = (ex, seconds) => {
+    if (seconds < 15) return false; // a short transition has no room for it
+    if (o.voiceDetail === 'full') return true;
+    if (o.voiceDetail === 'minimal') return false;
+    return !heard.has(explainKey(ex));
+  };
 
   const exInfo = (ex, ei) => ({
     exerciseIndex: ei,
@@ -52,14 +79,18 @@ export function expandRoutine(routine, opts = {}) {
 
   if (routine.setup && routine.setup.seconds > 0) {
     const first = routine.exercises[0];
+    const explain = first && readSetup(first, routine.setup.seconds);
+    let say = fill(routine.setup.say);
+    if (first) say += ` First up: ${first.name}.` + (explain ? ` ${fill(first.setup)}` : '');
     phases.push({
       type: 'transition',
       kind: 'setup',
       seconds: routine.setup.seconds,
       label: 'Setup',
       instruction: fill(routine.setup.say),
-      cues: [{ at: 0, say: fill(routine.setup.say), label: 'Setup', segment: 'transition', sound: 'single' }],
+      cues: [{ at: 0, say, label: 'Setup', segment: 'transition', sound: 'single' }],
       next: first ? nextInfo(first, 0) : null,
+      explains: explain ? [explainKey(first)] : [],
       meta: { ...(first ? exInfo(first, 0) : { exerciseIndex: -1, exerciseCount: exCount }), set: 0, sets: 0, side: null },
     });
   }
@@ -71,7 +102,8 @@ export function expandRoutine(routine, opts = {}) {
     const info = exInfo(ex, ei);
 
     if (ei > 0) {
-      const say = exSec >= 15 ? `Next: ${ex.name}. ${fill(ex.setup)}` : `Next: ${ex.name}`;
+      const explain = readSetup(ex, exSec);
+      const say = explain ? `Next: ${ex.name}. ${fill(ex.setup)}` : `Next: ${ex.name}`;
       phases.push({
         type: 'transition',
         kind: 'exercise',
@@ -80,6 +112,7 @@ export function expandRoutine(routine, opts = {}) {
         instruction: fill(ex.setup),
         cues: [{ at: 0, say, label: 'Next up', segment: 'transition', sound: 'long', vibrate: 'long' }],
         next: nextInfo(ex, ei),
+        explains: explain ? [explainKey(ex)] : [],
         meta: { ...info, set: 1, sets, side: sides[0] },
       });
     }
@@ -113,7 +146,7 @@ export function expandRoutine(routine, opts = {}) {
           }
         }
         for (const block of ex.unit) {
-          phases.push(blockToPhase(block, ex, meta, fill));
+          phases.push(blockToPhase(block, ex, meta, fill, o, heard));
         }
         unitNo++;
       }
@@ -131,14 +164,17 @@ export function expandRoutine(routine, opts = {}) {
   return phases;
 }
 
-function blockToPhase(block, ex, meta, fill) {
+function blockToPhase(block, ex, meta, fill, o, heard) {
   const side = meta.side;
   const prefix = side ? `${sideName(side)}. ` : '';
+  // Repeat sides/sets get the short wording unless voice detail is 'full'.
+  const useShort = o.voiceDetail === 'minimal' || (o.voiceDetail === 'once' && meta.unitIndex > 0);
   if (block.type === 'hold') {
-    const cues = (block.cues || []).map((c, i) => ({
-      ...c,
-      say: i === 0 && c.at === 0 ? prefix + c.say : c.say,
-    }));
+    const cues = (block.cues || []).map((c, i) => {
+      const text = useShort && c.short ? c.short : c.say;
+      const { short, ...rest } = c;
+      return { ...rest, say: i === 0 && c.at === 0 ? prefix + text : text };
+    });
     if (!cues.length || cues[0].at !== 0) {
       cues.unshift({ at: 0, say: `${prefix}Settle.`, label: 'Settle', segment: 'settle' });
     }
@@ -172,9 +208,10 @@ function blockToPhase(block, ex, meta, fill) {
     };
   }
   if (block.type === 'accumulate') {
-    const cues = [
-      { at: 0, say: block.startSay || `${ex.name}. Accumulate.`, label: 'Accumulate', segment: 'accumulate', sound: 'single' },
-    ];
+    const full = block.startSay || `${ex.name}. Accumulate.`;
+    const brief = block.startShort || full;
+    const startSay = o.voiceDetail === 'full' ? full : o.voiceDetail === 'minimal' ? brief : heard.has(explainKey(ex)) ? brief : full;
+    const cues = [{ at: 0, say: startSay, label: 'Accumulate', segment: 'accumulate', sound: 'single' }];
     const every = block.reminderEvery || 0;
     if (every > 0 && block.reminder) {
       for (let t = every; t < block.seconds; t += every) {

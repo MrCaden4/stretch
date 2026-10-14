@@ -151,6 +151,7 @@ function check(name, ok, extra = '') {
   await shot('18-end');
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('stretch.v1')));
   check('session recorded', stored.sessions.length === 1 && stored.sessions[0].completed === true && stored.sessions[0].routine === 'A');
+  check('setup explanations marked as heard', Object.keys(stored.heard || {}).length === 5, JSON.stringify(stored.heard));
   check('longest chunk recorded', stored.sessions[0].longestSquatChunk === 190 || stored.sessions[0].longestSquatChunk === 240, `(${stored.sessions[0].longestSquatChunk})`);
   await page.click('#end-home');
   await page.waitForTimeout(50);
@@ -169,6 +170,15 @@ function check(name, ok, extra = '') {
   check('off day shows the off-day card', offHome.includes('Today: Off day'), `(${offHome.slice(0, 120)})`);
   check('picker still offers Session A on an off day', !!(await page.$('.pick-card a[href="#/a"]')) && !(await text('.pick-card')).includes('today'));
   await shot('19b-home-offday');
+  // Jump to the next Monday: the weekday plan says A, alternation says B after Wednesday's A.
+  await page.clock.setSystemTime(new Date(2026, 9, 5, 19, 30, 0));
+  await page.goto(BASE + '#/settings');
+  await page.goto(BASE + '#/');
+  await page.waitForTimeout(50);
+  const monHome = await text('#app');
+  check('schedule alternates to Session B after a completed A', monHome.includes('Today: Session B') && monHome.includes('Alternating: your last completed session was Session A'), `(${monHome.slice(0, 160)})`);
+  check('badge follows the alternating suggestion', (await text('.pick-card a[href="#/b"]')).includes('today') && !(await text('.pick-card a[href="#/a"]')).includes('today'));
+  await shot('19c-home-monday-alternate');
   await page.clock.setSystemTime(new Date(2026, 8, 30, 19, 40, 0));
   await page.goto(BASE + '#/settings');
   await page.goto(BASE + '#/');
@@ -245,6 +255,21 @@ function check(name, ok, extra = '') {
   await page.selectOption('#set-theme', 'light');
   check('light theme applied', (await page.getAttribute('html', 'data-theme')) === 'light');
   await shot('50-settings-light');
+  check('voice detail and volume controls exist', !!(await page.$('#set-voice-detail')) && !!(await page.$('#set-voice-vol')) && !!(await page.$('#set-beep-vol')));
+  await page.selectOption('#set-voice-detail', 'minimal');
+  await page.evaluate(() => {
+    const el = document.querySelector('#set-voice-vol');
+    el.value = '40';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  const vs = await page.evaluate(() => JSON.parse(localStorage.getItem('stretch.v1')).settings);
+  check('voice detail and volume saved', vs.voiceDetail === 'minimal' && vs.voiceVolume === 40, JSON.stringify({ d: vs.voiceDetail, v: vs.voiceVolume }));
+  check('volume label updates', (await text('#voice-vol-label')) === '40%');
+  await page.click('#reset-heard');
+  const heardAfter = await page.evaluate(() => JSON.parse(localStorage.getItem('stretch.v1')).heard);
+  check('read-setups-again clears the heard list', Object.keys(heardAfter || {}).length === 0);
+  await page.selectOption('#set-voice-detail', 'once');
   await page.selectOption('#set-theme', 'dark');
   await page.fill('#set-kb', '20');
   await page.dispatchEvent('#set-kb', 'change');
