@@ -13,6 +13,8 @@
 //   rest: { seconds, say } inserted between unsided rounds (side switches are automatic).
 //
 // Segments drive the on-screen phase name and colour: settle, contract, sink.
+// `short` is the spoken text for repeat sides/sets once the full cue has been
+// heard in this exercise (voice detail "once" and "minimal").
 
 export const RULES = [
   {
@@ -123,52 +125,52 @@ export const NOTCHES = {
 
 // ---- Cue timelines --------------------------------------------------------
 
-const settle = (say) => ({ at: 0, say, label: 'Settle', segment: 'settle' });
+const settle = (say, short) => ({ at: 0, say, short, label: 'Settle', segment: 'settle' });
 
 const SOLEUS_CUES = [
-  settle('Settle at 7. Slow breathing, jaw loose.'),
-  { at: 60, say: 'Contract: press the ball of the foot down, 10 seconds', label: 'Contract', segment: 'contract' },
-  { at: 70, say: 'Relax, exhale, sink. Let it creep to 8', label: 'Sink', segment: 'sink' },
+  settle('Settle at 7. Slow breathing, jaw loose.', 'Settle at 7.'),
+  { at: 60, say: 'Contract: press the ball of the foot down, 10 seconds', short: 'Contract, 10 seconds', label: 'Contract', segment: 'contract' },
+  { at: 70, say: 'Relax, exhale, sink. Let it creep to 8', short: 'Relax and sink', label: 'Sink', segment: 'sink' },
 ];
 
 const ROCKBACK_CUES = [
   settle('Settle at 6 to 7.'),
-  { at: 60, say: 'Contract: press the straight-leg foot into the floor, 10 seconds', label: 'Contract', segment: 'contract' },
+  { at: 60, say: 'Contract: press the straight-leg foot into the floor, 10 seconds', short: 'Contract, 10 seconds', label: 'Contract', segment: 'contract' },
   { at: 70, say: 'Relax and sink', label: 'Sink', segment: 'sink' },
 ];
 
 const COUCH_LONG_CUES = [
-  settle('Settle at 7. Glute squeezed, ribs down.'),
-  { at: 60, say: 'Press the foot into the wall, 10 seconds', label: 'Press', segment: 'contract' },
-  { at: 70, say: 'Squeeze the rear glute hard, 10 seconds', label: 'Squeeze', segment: 'contract' },
-  { at: 80, say: 'Relax and sink, 40 seconds', label: 'Sink', segment: 'sink' },
+  settle('Settle at 7. Glute squeezed, ribs down.', 'Settle at 7.'),
+  { at: 60, say: 'Press the foot into the wall, 10 seconds', short: 'Press the foot, 10 seconds', label: 'Press', segment: 'contract' },
+  { at: 70, say: 'Squeeze the rear glute hard, 10 seconds', short: 'Squeeze the glute, 10 seconds', label: 'Squeeze', segment: 'contract' },
+  { at: 80, say: 'Relax and sink, 40 seconds', short: 'Relax and sink', label: 'Sink', segment: 'sink' },
 ];
 
 const COUCH_CR_CUES = [
-  settle('Settle at 7. Glute squeezed, ribs down.'),
-  { at: 50, say: 'Press the foot into the wall, 10 seconds', label: 'Press', segment: 'contract' },
+  settle('Settle at 7. Glute squeezed, ribs down.', 'Settle at 7.'),
+  { at: 50, say: 'Press the foot into the wall, 10 seconds', short: 'Press the foot, 10 seconds', label: 'Press', segment: 'contract' },
   { at: 60, say: 'Squeeze the glute, 10 seconds', label: 'Squeeze', segment: 'contract' },
-  { at: 70, say: 'Relax and sink, 20 seconds', label: 'Sink', segment: 'sink' },
+  { at: 70, say: 'Relax and sink, 20 seconds', short: 'Relax and sink', label: 'Sink', segment: 'sink' },
 ];
 
 const COUCH_MIN_CUES = [
-  settle('Settle at 7. Glute squeezed, ribs down.'),
-  { at: 30, say: 'Press the foot into the wall, 10 seconds', label: 'Press', segment: 'contract' },
+  settle('Settle at 7. Glute squeezed, ribs down.', 'Settle at 7.'),
+  { at: 30, say: 'Press the foot into the wall, 10 seconds', short: 'Press the foot, 10 seconds', label: 'Press', segment: 'contract' },
   { at: 40, say: 'Squeeze the glute, 10 seconds', label: 'Squeeze', segment: 'contract' },
-  { at: 50, say: 'Relax and sink, 10 seconds', label: 'Sink', segment: 'sink' },
+  { at: 50, say: 'Relax and sink, 10 seconds', short: 'Relax and sink', label: 'Sink', segment: 'sink' },
 ];
 
 const HAMSTRING_CUES = [
-  settle('Settle at 6 to 7. Flat back, hips square.'),
-  { at: 60, say: 'Contract: press the heel down into the chair, 10 seconds', label: 'Contract', segment: 'contract' },
+  settle('Settle at 6 to 7. Flat back, hips square.', 'Settle at 6 to 7.'),
+  { at: 60, say: 'Contract: press the heel down into the chair, 10 seconds', short: 'Contract, 10 seconds', label: 'Contract', segment: 'contract' },
   { at: 70, say: 'Relax and sink', label: 'Sink', segment: 'sink' },
 ];
 
 const SIDE_SPLIT_CUES = [
-  settle('Slide the feet apart to 6 to 7. Pelvis slightly forward.'),
-  { at: 30, say: 'Squeeze the feet toward each other, 10 seconds, then relax and slide 1 to 2 cm wider', label: 'Squeeze', segment: 'contract' },
+  settle('Slide the feet apart to 6 to 7. Pelvis slightly forward.', 'Slide out to 6 to 7.'),
+  { at: 30, say: 'Squeeze the feet toward each other, 10 seconds, then relax and slide 1 to 2 cm wider', short: 'Squeeze the feet together, 10 seconds', label: 'Squeeze', segment: 'contract' },
   { at: 40, say: 'Relax, slide wider', label: 'Sink', segment: 'sink' },
-  { at: 60, say: 'Squeeze the feet toward each other, 10 seconds, then relax and slide 1 to 2 cm wider', label: 'Squeeze', segment: 'contract' },
+  { at: 60, say: 'Squeeze the feet toward each other, 10 seconds, then relax and slide 1 to 2 cm wider', short: 'Squeeze the feet together, 10 seconds', label: 'Squeeze', segment: 'contract' },
   { at: 70, say: 'Relax, slide wider', label: 'Sink', segment: 'sink' },
 ];
 
@@ -182,7 +184,7 @@ const BUTTERFLY_CUES = [
   { at: 95, say: 'Relax', label: 'Sink', segment: 'sink' },
 ];
 
-const NINETY_CUES = [settle('Settle at 6 to 7. Hinge the chest over the front shin, back hip down.')];
+const NINETY_CUES = [settle('Settle at 6 to 7. Hinge the chest over the front shin, back hip down.', 'Settle at 6 to 7.')];
 
 // ---- Shared setups ----------------------------------------------------------
 
@@ -233,6 +235,7 @@ function squatHang(id, targetSeconds, extraNote) {
         reminderEvery: 60,
         reminder: 'Shift side to side, pry the knees out.',
         startSay: `Squat hang. Accumulate ${min} minute${min === 1 ? '' : 's'} at 5 to 6. Pause when you need to stand.`,
+        startShort: `Squat hang, ${min} minute${min === 1 ? '' : 's'}.`,
       },
     ],
   };
@@ -393,14 +396,12 @@ export const ROUTINES = {
 };
 
 export const SCHEDULE = [
-  { day: 'Mon', text: 'Session A' },
-  { day: 'Tue', text: 'Session B' },
-  { day: 'Wed', text: 'Session A' },
-  { day: 'Thu', text: 'Session B' },
+  { day: 'Mon to Thu', text: 'Session days: A and B alternate, whichever you did not do last' },
   { day: 'Fri to Sun', text: 'Off. Optional 3-min squat hang' },
 ];
 
-export const SCHEDULE_NOTE = 'Sessions at the 7:30 pm break. Test days add 5 min.';
+export const SCHEDULE_NOTE =
+  'The suggested session flips after each completed A or B, so a missed day never leaves you doing the same routine twice in a row. Sessions at the 7:30 pm break. Test days add 5 min.';
 
 export const EXPECTATIONS = [
   'Knee-to-wall gains in 4-8 weeks. Flat-footed unsupported squat in 3-6 months, effortless in 6-12. Turnout control in 6-12 weeks. Front split 12-24 months. Side split 18-36 months, or not possible if the hip bones block it; the tests will tell.',

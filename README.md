@@ -8,14 +8,14 @@ Vanilla HTML, CSS and JavaScript (ES modules). No frameworks, no build step, no 
 
 ## What it does
 
-- **Guided sessions** with big timers, spoken cues (Web Speech), beeps (Web Audio) and vibration. Timing is by wall clock, so a locked phone or a backgrounded tab never drifts the session. Screen Wake Lock keeps the display on.
+- **Guided sessions** with big timers, spoken cues (Web Speech), beeps (Web Audio) and vibration. Timing is by wall clock, so a locked phone or a backgrounded tab never drifts the session. Screen Wake Lock keeps the display on. Voice and beep volume are separate sliders; a Voice detail setting reads each exercise's setup aloud only the first time (default), always, or never, and shortens repeated cues after the first side.
 - **Phase types:** holds with a contract-relax cue timeline, accumulate (squat hangs, with chunk tracking), reps (90/90 lift-offs), transitions (side switch, next exercise with setup text and notch).
 - **Notches** (the depth setting per exercise) show on every transition screen with + and - buttons, so the progression rule is applied by hand in a tap.
-- **Home** shows today's session by weekday, a Pick a session tile to start A, B, Minimum or the squat hang on any day, the week tracker (4 dots), test-day banner, desk phase, schedule, rules and expectations.
+- **Home** suggests today's session: Monday to Thursday are session days and A and B alternate from the last completed one, so a missed day never repeats a routine. A Pick a session tile starts A, B, Minimum or the squat hang on any day. Also the week tracker (4 dots), test-day banner, desk phase, schedule, rules and expectations.
 - **Desk** logs slant-board minutes, squat hangs and the hamstring hold, with bout timers.
 - **Tests** runs the guided every-other-Monday measurements and keeps history with sparklines.
 - **Guide** holds the program notes, pulled from `docs/program.md`.
-- **Settings:** kettlebell kg, cue toggles, theme, transition seconds, dates, notches, export/import/reset.
+- **Settings:** kettlebell kg, cue toggles, voice and beep volume, voice detail, theme, transition seconds, dates, notches, export/import/reset.
 
 ## Run locally
 

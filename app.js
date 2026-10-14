@@ -18,10 +18,10 @@ import {
   TEST_SCHEDULE_TEXT,
 } from './data/routines.js';
 import { GUIDE, guideSection } from './data/guide.js';
-import { expandRoutine, SessionEngine, plannedSeconds, formatClock, sideName } from './timer.js';
+import { expandRoutine, SessionEngine, plannedSeconds, formatClock, sideName, VOICE_DETAILS } from './timer.js';
 import * as S from './state.js';
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 const REPO_URL = 'https://github.com/MrCaden4/stretch';
 const ROUTE_FOR_ROUTINE = { A: 'a', B: 'b', min: 'min', off: 'off' };
 
@@ -84,7 +84,38 @@ function settingsOpts() {
     sideSwitchSeconds: Number(s.sideSwitchSeconds) > 0 ? Number(s.sideSwitchSeconds) : 10,
     exerciseTransitionSeconds: Number(s.exerciseTransitionSeconds) > 0 ? Number(s.exerciseTransitionSeconds) : 20,
     kettlebellKg: Number.isFinite(Number(s.kettlebellKg)) ? Number(s.kettlebellKg) : 16,
+    voiceDetail: VOICE_DETAILS.includes(s.voiceDetail) ? s.voiceDetail : 'once',
+    heard: new Set(Object.keys(state.heard || {})),
   };
+}
+
+const VOICE_DETAIL_HINTS = {
+  full: 'Reads every setup on every transition and the full cue wording on every side.',
+  once: 'Reads each setup the first time you do that exercise, then just the name. Repeat sides get short cues.',
+  minimal: 'Never reads setups. Short cues always.',
+};
+
+function volumePct(key, fallback) {
+  return Math.round(volume(key, fallback) * 100);
+}
+
+function volume(key, fallback) {
+  const v = Number(state.settings[key]);
+  const pct = Number.isFinite(v) ? v : fallback;
+  return Math.min(1, Math.max(0, pct / 100));
+}
+
+// A setup explanation was spoken: remember it so voice detail "once" skips it next time.
+function markHeard(keys) {
+  if (!state.settings.voice || volume('voiceVolume', 70) <= 0) return;
+  let changed = false;
+  for (const k of keys) {
+    if (!state.heard[k]) {
+      state.heard[k] = todayKey();
+      changed = true;
+    }
+  }
+  if (changed) save();
 }
 
 function routineMinutes(id) {
@@ -149,6 +180,8 @@ const audio = {
   },
   beep(kind) {
     if (!state.settings.beeps || !this.ctx) return;
+    const peak = 0.5 * volume('beepVolume', 60);
+    if (peak < 0.001) return;
     try {
       const ctx = this.ctx;
       if (ctx.state === 'suspended') ctx.resume().catch(() => {});
@@ -161,8 +194,8 @@ const audio = {
         osc.type = 'sine';
         osc.frequency.value = freq;
         gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.exponentialRampToValueAtTime(0.5, t + 0.01);
-        gain.gain.setValueAtTime(0.5, Math.max(t + 0.011, t + dur - 0.03));
+        gain.gain.exponentialRampToValueAtTime(peak, t + 0.01);
+        gain.gain.setValueAtTime(peak, Math.max(t + 0.011, t + dur - 0.03));
         gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
         osc.connect(gain).connect(ctx.destination);
         osc.start(t);
@@ -176,12 +209,15 @@ const audio = {
   speak(text) {
     if (!state.settings.voice || !text) return;
     if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return;
+    const vol = volume('voiceVolume', 70);
+    if (vol <= 0) return;
     try {
       const synth = window.speechSynthesis;
       if (synth.speaking || synth.pending) synth.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1.0;
       u.pitch = 1.0;
+      u.volume = vol;
       u.lang = 'en-US';
       setTimeout(() => {
         try {
@@ -338,6 +374,7 @@ function viewHome() {
   const d = now();
   const key = todayKey();
   const plan = S.planForDay(d);
+  const suggested = S.suggestedRoutine(state, d);
   const week = S.programWeek(state, d);
   const ws = S.weekSummary(state, d);
   const doneToday = S.sessionsOn(state, key).filter(S.isCountedSession);
@@ -349,6 +386,8 @@ function viewHome() {
 
   // What already happened today, whatever the schedule said.
   const mainDone = doneToday.filter((s) => s.routine === 'A' || s.routine === 'B');
+  // The session the Today card presents: what was done today, else the alternating suggestion.
+  const todayId = plan === 'off' ? null : mainDone.length ? mainDone[mainDone.length - 1].routine : suggested;
   const minDone = doneToday.find((s) => s.routine === 'min');
   const offDone = S.sessionsOn(state, key).find((s) => s.routine === 'off' && s.completed);
   const doneLines = [
@@ -368,25 +407,31 @@ function viewHome() {
       offDone ? '' : 'btn-primary btn-big'
     } btn-block" href="#/off">3-min squat hang</a><a class="btn btn-block" href="#/min" style="margin-top:10px">Bad day? Minimum, 10 min</a></section>`;
   } else {
-    const r = ROUTINES[plan];
-    const scheduledDone = mainDone.some((s) => s.routine === plan);
+    const r = ROUTINES[todayId];
+    const last = S.lastMainSession(state);
+    const shownDone = mainDone.some((s) => s.routine === todayId);
     const anyDone = mainDone.length > 0 || !!minDone;
-    todayCard = `<section class="card"><h2>Today: ${esc(r.name)}</h2><p class="muted">${esc(r.focus)}</p>${doneLines}${
+    const lastDate = last ? S.parseDateKey(last.date) : null;
+    const whyLine =
+      !mainDone.length && last
+        ? `<p class="muted small">Alternating: your last completed session was ${esc(ROUTINES[last.routine].name)}${lastDate ? ` on ${esc(S.formatShortDate(lastDate))}` : ''}.</p>`
+        : '';
+    todayCard = `<section class="card"><h2>Today: ${esc(r.name)}</h2><p class="muted">${esc(r.focus)}</p>${whyLine}${doneLines}${
       anyDone
-        ? `<a class="btn btn-block" href="#/${ROUTE_FOR_ROUTINE[plan]}">Start ${esc(r.name)}${scheduledDone ? ' again' : ''}</a>`
-        : `<a class="btn btn-primary btn-big btn-block" href="#/${ROUTE_FOR_ROUTINE[plan]}">Start ${esc(r.name)} (about ${routineMinutes(plan)} min)</a>`
+        ? `<a class="btn btn-block" href="#/${ROUTE_FOR_ROUTINE[todayId]}">Start ${esc(r.name)}${shownDone ? ' again' : ''}</a>`
+        : `<a class="btn btn-primary btn-big btn-block" href="#/${ROUTE_FOR_ROUTINE[todayId]}">Start ${esc(r.name)} (about ${routineMinutes(todayId)} min)</a>`
     }<a class="btn btn-block" href="#/min" style="margin-top:10px">Bad day? Minimum, 10 min</a></section>`;
   }
 
   // Override the schedule: any session on any day.
   const pickCard = `<section class="card pick-card">
     <h2>Pick a session</h2>
-    <p class="muted small">Any session, any day. Session A or B counts toward the week whichever day you do it.</p>
+    <p class="muted small">Any session, any day. Session A or B counts toward the week whichever day you do it, and the next suggestion flips to the other one.</p>
     <div class="grid-2">${['A', 'B']
       .map(
         (id) =>
           `<a class="btn btn-big btn-stack" href="#/${ROUTE_FOR_ROUTINE[id]}"><span>${esc(ROUTINES[id].name)}${
-            plan === id ? ' <span class="badge">today</span>' : ''
+            todayId === id ? ' <span class="badge">today</span>' : ''
           }</span><small>${esc(ROUTINES[id].focus)} · about ${routineMinutes(id)} min</small></a>`
       )
       .join('')}</div>
@@ -400,7 +445,7 @@ function viewHome() {
   if (!hasBaseline) {
     testBanner = `<div class="banner banner-test"><div><strong>No baseline yet: run the first tests</strong><div class="muted small">5 min of measurements, then the session.</div></div><button class="btn btn-primary" id="go-tests">Run tests</button></div>`;
   } else if (testDay && !testedToday) {
-    testBanner = `<div class="banner banner-test"><div><strong>Test day: 5 min of measurements before Session A</strong></div><button class="btn btn-primary" id="go-tests">Start tests</button></div>`;
+    testBanner = `<div class="banner banner-test"><div><strong>Test day: 5 min of measurements before the session</strong></div><button class="btn btn-primary" id="go-tests">Start tests</button></div>`;
   }
 
   const recent = state.sessions
@@ -499,7 +544,7 @@ function renderRoutineOverview(id) {
       ? '<p class="muted">Counts as a completed day in the week tracker, marked minimum. 5 s side switches, 10 s transitions.</p>'
       : id === 'off'
         ? '<p class="muted">Shows in the log but does not count toward the 4 per week.</p>'
-        : `<p class="muted">Scheduled ${esc(r.days.map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(' and '))}.</p>`;
+        : `<p class="muted">Session days are Monday to Thursday. A and B alternate from your last completed session.</p>`;
 
   $app.innerHTML = `
     <header class="page-header"><div><h1>${esc(r.name)}</h1><div class="sub">${esc(r.focus)} · about ${Math.round(planned / 60)} min (${formatClock(planned)} planned)</div></div><a class="btn btn-small" href="#/">Home</a></header>
@@ -525,8 +570,10 @@ function startSession(routineId) {
   lastSummary = null;
   engine.on((type, data) => {
     if (activeSession !== s) return;
-    if (type === 'cue') audio.cue(data.cue);
-    else if (type === 'phase') {
+    if (type === 'cue') {
+      audio.cue(data.cue);
+      if (data.phase && data.phase.explains && data.phase.explains.length) markHeard(data.phase.explains);
+    } else if (type === 'phase') {
       if (sessionViewVisible()) buildSessionScreen();
     } else if (type === 'finish') finishSession(data);
   });
@@ -798,7 +845,7 @@ function renderEndScreen(id) {
       </dl>
       ${dotsHtml(ws.days)}
       ${note}
-      <p style="margin-top:12px"><strong>${esc(S.nextSessionLine(d))}</strong></p>
+      <p style="margin-top:12px"><strong>${esc(S.nextSessionLine(d, (S.lastMainSession(state) || {}).routine))}</strong></p>
       <div class="stack" style="margin-top:12px">
         <a class="btn btn-primary btn-big btn-block" href="#/" id="end-home">Home</a>
         <button class="btn btn-block" id="end-again">Start ${esc(r.name)} again</button>
@@ -1312,7 +1359,7 @@ function glanceHtml() {
   const sessions = ['A', 'B', 'min'].map((id) => {
     const r = ROUTINES[id];
     const planned = plannedSeconds(expandRoutine(r, settingsOpts()));
-    const days = id === 'min' ? 'Any day, when the full session will not happen' : r.days.map((d) => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d]).join(' and ');
+    const days = id === 'min' ? 'Any day, when the full session will not happen' : `Session days Monday to Thursday, alternating with Session ${id === 'A' ? 'B' : 'A'}`;
     return `<h3>${esc(r.name)}: ${esc(r.focus)}</h3><p class="muted small">${esc(days)}. About ${Math.round(planned / 60)} min with transitions.</p><ol>${r.exercises
       .map((ex) => `<li><strong>${esc(ex.name)}.</strong> ${esc(ex.dose)}. ${esc(ex.intensity)} Notch: ${esc(ex.notchNote)}</li>`)
       .join('')}</ol>`;
@@ -1362,7 +1409,14 @@ function viewSettings() {
       <label class="switch"><span>Voice</span><input type="checkbox" id="set-voice" ${s.voice ? 'checked' : ''}></label>
       <label class="switch"><span>Beeps</span><input type="checkbox" id="set-beeps" ${s.beeps ? 'checked' : ''}></label>
       <label class="switch"><span>Vibration</span><input type="checkbox" id="set-vib" ${s.vibration ? 'checked' : ''}></label>
-      <button class="btn" id="test-cues" style="margin-top:10px">Test beep, voice and vibration</button>
+      <label class="field" style="margin-top:12px"><span>Voice volume: <span id="voice-vol-label">${esc(volumePct('voiceVolume', 70))}%</span></span><input type="range" id="set-voice-vol" min="0" max="100" step="5" value="${esc(volumePct('voiceVolume', 70))}"><span class="hint">Lower it to talk over a video. Whether the phone honours it depends on its speech engine.</span></label>
+      <label class="field"><span>Beep volume: <span id="beep-vol-label">${esc(volumePct('beepVolume', 60))}%</span></span><input type="range" id="set-beep-vol" min="0" max="100" step="5" value="${esc(volumePct('beepVolume', 60))}"></label>
+      <label class="field"><span>Voice detail</span><select id="set-voice-detail">
+        <option value="full"${(s.voiceDetail || 'once') === 'full' ? ' selected' : ''}>Full</option>
+        <option value="once"${(s.voiceDetail || 'once') === 'once' ? ' selected' : ''}>Once per exercise</option>
+        <option value="minimal"${(s.voiceDetail || 'once') === 'minimal' ? ' selected' : ''}>Minimal</option>
+      </select><span class="hint" id="voice-detail-hint">${esc(VOICE_DETAIL_HINTS[s.voiceDetail] || VOICE_DETAIL_HINTS.once)} ${Object.keys(state.heard || {}).length} setup explanation(s) heard so far.</span></label>
+      <div class="grid-2"><button class="btn" id="test-cues">Test beep and voice</button><button class="btn" id="reset-heard">Read all setups again</button></div>
     </section>
     <section class="card">
       <h2>Appearance</h2>
@@ -1417,6 +1471,34 @@ function viewSettings() {
   flag('#set-voice', 'voice');
   flag('#set-beeps', 'beeps');
   flag('#set-vib', 'vibration');
+  const slider = (id, key, labelId) => {
+    const input = $app.querySelector(id);
+    const label = $app.querySelector(labelId);
+    input.addEventListener('input', () => {
+      state.settings[key] = Math.max(0, Math.min(100, Math.round(Number(input.value) || 0)));
+      label.textContent = `${state.settings[key]}%`;
+    });
+    input.addEventListener('change', () => {
+      save();
+      audio.unlock();
+      if (key === 'beepVolume') audio.beep('single');
+      else audio.speak('Voice volume check.');
+    });
+  };
+  slider('#set-voice-vol', 'voiceVolume', '#voice-vol-label');
+  slider('#set-beep-vol', 'beepVolume', '#beep-vol-label');
+  $app.querySelector('#set-voice-detail').addEventListener('change', (e) => {
+    state.settings.voiceDetail = VOICE_DETAILS.includes(e.currentTarget.value) ? e.currentTarget.value : 'once';
+    save();
+    const hint = $app.querySelector('#voice-detail-hint');
+    if (hint) hint.textContent = `${VOICE_DETAIL_HINTS[state.settings.voiceDetail]} ${Object.keys(state.heard || {}).length} setup explanation(s) heard so far.`;
+  });
+  $app.querySelector('#reset-heard').addEventListener('click', () => {
+    state.heard = {};
+    save();
+    toast('Setups will be read aloud again, once each.');
+    render();
+  });
   $app.querySelector('#test-cues').addEventListener('click', () => {
     audio.unlock();
     setTimeout(() => audio.cue({ sound: 'double', vibrate: 'double', say: 'Voice check. Switch sides.' }), 50);

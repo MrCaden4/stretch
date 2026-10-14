@@ -18,6 +18,9 @@ export const DEFAULT_SETTINGS = {
   exerciseTransitionSeconds: 20,
   programStart: null, // 'YYYY-MM-DD' or null = first completed session
   testStart: null, // 'YYYY-MM-DD' or null = first saved test
+  voiceDetail: 'once', // full | once | minimal (see timer.js DEFAULTS)
+  voiceVolume: 70, // 0-100
+  beepVolume: 60, // 0-100
 };
 
 export function defaultNotches() {
@@ -34,6 +37,7 @@ export function defaultState() {
     sessions: [],
     desk: {},
     tests: [],
+    heard: {}, // explainKey -> date the setup explanation was read aloud
   };
 }
 
@@ -59,6 +63,7 @@ export function normalizeState(raw) {
   if (Array.isArray(raw.sessions)) base.sessions = raw.sessions.filter((s) => isObj(s) && typeof s.date === 'string');
   if (isObj(raw.desk)) base.desk = raw.desk;
   if (Array.isArray(raw.tests)) base.tests = raw.tests.filter((t) => isObj(t) && typeof t.date === 'string');
+  if (isObj(raw.heard)) base.heard = { ...raw.heard };
   return base;
 }
 
@@ -184,11 +189,38 @@ export function nextScheduled(today) {
   return null;
 }
 
-export function nextSessionLine(today) {
+// Most recent completed Session A or B, any day of the week.
+export function lastMainSession(state) {
+  let best = null;
+  for (const s of state.sessions) {
+    if (!s.completed || (s.routine !== 'A' && s.routine !== 'B')) continue;
+    if (!best || (s.startedAt || '') > (best.startedAt || '')) best = s;
+  }
+  return best;
+}
+
+export function otherMain(routine) {
+  return routine === 'A' ? 'B' : routine === 'B' ? 'A' : null;
+}
+
+// Which main session to suggest today: A and B alternate from the last
+// completed one, so a skipped day never repeats a routine. With no history the
+// weekday plan decides. Off days stay off days.
+export function suggestedRoutine(state, today) {
+  const plan = planForDay(today);
+  if (plan === 'off') return 'off';
+  const last = lastMainSession(state);
+  return last ? otherMain(last.routine) : plan;
+}
+
+// `lastRoutine` is the routine just done (or the last completed one); the next
+// session day then gets the other one.
+export function nextSessionLine(today, lastRoutine) {
   const n = nextScheduled(today);
   if (!n) return '';
+  const routine = otherMain(lastRoutine) || n.routine;
   const when = n.daysAway === 1 ? `tomorrow (${weekdayName(n.date)})` : weekdayName(n.date);
-  let line = `Next: ${ROUTINES[n.routine].name}, ${when}.`;
+  let line = `Next: ${ROUTINES[routine].name}, ${when}.`;
   if (n.daysAway > 1) line += ' Off days: optional 3-min squat hang.';
   return line;
 }

@@ -12,7 +12,7 @@ A static, phone-first PWA: a guided stretch-routine timer for one specific flexi
 - `styles.css`: all styles. Dark is the default; `:root[data-theme="light"]` overrides. One accent per phase segment (`--seg-settle`, `--seg-contract`, `--seg-sink`, `--seg-transition`, `--seg-accumulate`, `--seg-lift/hold/down`). Tap targets are at least 56 px, except the compact secondary session controls (50 px) and notch buttons (48 px).
 - `app.js`: the only file that touches the DOM or browser APIs. Hash router (`#/`, `#/a`, `#/b`, `#/min`, `#/off`, `#/desk`, `#/tests`, `#/guide`, `#/settings`), all views, audio (Web Audio beeps), speech (speechSynthesis), vibration, Screen Wake Lock, service worker registration, toasts.
 - `timer.js`: pure engine, DOM-free. `expandRoutine(routine, opts)` turns a routine into ordered phases; `SessionEngine` runs them by wall clock.
-- `state.js`: pure helpers, DOM-free. Load/save/normalize state, date helpers, weekday plan, program week, test days, week tracker, session records, notches, desk logs, test history, export/import.
+- `state.js`: pure helpers, DOM-free. Load/save/normalize state, date helpers, weekday plan, alternating A/B suggestion (`suggestedRoutine`, `lastMainSession`), program week, test days, week tracker, session records, notches, desk logs, test history, export/import. `state.heard` maps `explainKey` values to the date a setup explanation was read aloud.
 - `data/routines.js`: all program content (rules, notches, routines, schedule text, expectations, desk phases, tests).
 - `data/guide.js`: Guide text as blocks. `docs/program.md` is the canonical long-form source; keep them consistent.
 - `sw.js`: service worker. `CACHE_VERSION` constant, precache list, network-first navigations, cache-first assets.
@@ -27,9 +27,9 @@ A static, phone-first PWA: a guided stretch-routine timer for one specific flexi
 
 Each exercise: `id`, `name`, `short`, `notch` (key into `NOTCHES`, shared across sessions), `setup` (with `{kb}` placeholder for kettlebell kg), `intensity`, `dose`, `notchNote`, `sides` (`['L','R']` or `null`), `rounds`, `unit` (blocks per side per round), optional `rest` for unsided rounds.
 
-Blocks: `hold` (`seconds`, `cues: [{ at, say, label, segment }]`), `reps` (`reps`, `secondsPerRep`), `accumulate` (`seconds` target, `reminderEvery`, `reminder`, `startSay`).
+Blocks: `hold` (`seconds`, `cues: [{ at, say, short?, label, segment }]`), `reps` (`reps`, `secondsPerRep`), `accumulate` (`seconds` target, `reminderEvery`, `reminder`, `startSay`, `startShort?`). `short` is the spoken wording for repeat sides/sets.
 
-`expandRoutine()` inserts: the setup transition, exercise transitions (long beep for the finished exercise, with `next` info for the screen), side switches (double beep, "Switch sides") and rests. There are no feel or rating screens; the user applies the progression rule with the notch + and - buttons on transition screens. Each phase has `type`, `seconds`, `label`, `instruction`, `cues` (sorted by `at`, each with `sound` and `vibrate`), `meta` (`exerciseIndex`, `exerciseCount`, `exerciseId`, `exerciseName`, `notch`, `set`, `sets`, `side`).
+`expandRoutine()` inserts: the setup transition, exercise transitions (long beep for the finished exercise, with `next` info for the screen), side switches (double beep, "Switch sides") and rests. There are no feel or rating screens; the user applies the progression rule with the notch + and - buttons on transition screens. Spoken wording follows `opts.voiceDetail` (`full` | `once` | `minimal`, default `once`) and `opts.heard` (a Set of `explainKey(exercise)` values): in `once` mode a setup paragraph is read only until its key is in `heard`, and repeat sides/sets use the cue's `short` text. A transition that reads a setup lists its keys in `phase.explains`; app.js marks them heard when the cue fires. Transitions under 15 s never read a setup. Each phase has `type`, `seconds`, `label`, `instruction`, `cues` (sorted by `at`, each with `sound` and `vibrate`), `meta` (`exerciseIndex`, `exerciseCount`, `exerciseId`, `exerciseName`, `notch`, `set`, `sets`, `side`).
 
 Planned time (`plannedSeconds`) is the sum of every phase. Expected: A 1400 s, B 1540 s, Minimum 645 s, off 190 s. The tests assert these; update `EXPECTED_SECONDS` in `tests/run.js` if a routine changes on purpose.
 
@@ -48,7 +48,8 @@ Planned time (`plannedSeconds`) is the sum of every phase. Expected: A 1400 s, B
 - Escape everything that goes into `innerHTML` (`esc()` in `app.js`); Guide text allows only `**bold**` through `inline()`.
 - `app.js` re-renders whole views with `render()`. The session screen is built once per phase (`buildSessionScreen`) and updated on ticks (`updateSessionScreen`) so buttons are not replaced mid-tap.
 - The session screen must fit a phone viewport without scrolling (about 412 x 780 CSS px portrait, 915 x 340 landscape): compact header, controls at the bottom above `env(safe-area-inset-bottom)`. `tests/smoke.cjs` checks this.
-- Mobile APIs (wake lock, speech, vibration, AudioContext) must feature-detect and fail silently.
+- Mobile APIs (wake lock, speech, vibration, AudioContext) must feature-detect and fail silently. Speech volume comes from `settings.voiceVolume`, beep gain from `settings.beepVolume` (0-100).
+- Today's suggestion on Home: off days (Fri to Sun) stay off; on session days A and B alternate from the last completed main session (`suggestedRoutine`), falling back to the weekday plan with no history. A session done today is what the Today card shows.
 - Keep `timer.js` and `state.js` importable under plain node (no `window`/`document` at module scope).
 - Run `node --check` on every JS file and `node tests/run.js` before committing.
 - Relative paths only (the site lives at a subpath).
